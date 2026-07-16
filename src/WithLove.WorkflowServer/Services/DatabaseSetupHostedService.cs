@@ -1,3 +1,4 @@
+using Temporalio.Api.Enums.V1;
 using Temporalio.Client;
 using Temporalio.Common.EnvConfig;
 using Temporalio.Exceptions;
@@ -21,9 +22,11 @@ public partial class DatabaseSetupHostedService(ILogger<DatabaseSetupHostedServi
 
             var handle = await client.StartWorkflowAsync(
                 (DatabaseSetupWorkflow wf) => wf.RunAsync(),
-                new(id: WorkflowId, taskQueue: TaskQueue)
+                new WorkflowOptions(id: WorkflowId, taskQueue: TaskQueue)
                 {
-                    IdReusePolicy = Temporalio.Api.Enums.V1.WorkflowIdReusePolicy.RejectDuplicate
+                    IdReusePolicy    = WorkflowIdReusePolicy.AllowDuplicateFailedOnly,
+                    IdConflictPolicy = WorkflowIdConflictPolicy.UseExisting,
+                    RunTimeout       = TimeSpan.FromMinutes(90),
                 });
 
             var result = await handle.GetResultAsync<DatabaseSetupResult>();
@@ -71,7 +74,7 @@ public partial class DatabaseSetupHostedService(ILogger<DatabaseSetupHostedServi
     {
         var connectOptions = ClientEnvConfig.LoadClientConnectOptions();
         var delay = TimeSpan.FromSeconds(2);
-        const int maxAttempts = 10;
+        const int maxAttempts = 20;
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
@@ -89,7 +92,7 @@ public partial class DatabaseSetupHostedService(ILogger<DatabaseSetupHostedServi
             }
         }
 
-        // Final attempt: let connection errors fail startup.
-        return await TemporalClient.ConnectAsync(connectOptions);
+        // Unreachable: on the final attempt the unfiltered RpcException propagates before this line.
+        throw new System.Diagnostics.UnreachableException("Temporal connection failed after all retries.");
     }
 }

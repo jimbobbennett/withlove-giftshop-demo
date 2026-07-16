@@ -15,13 +15,14 @@ public class DatabaseSetupWorkflow
             (DatabaseActivities act) => act.ApplyMigrationsAsync(),
             new ActivityOptions
             {
-                StartToCloseTimeout = TimeSpan.FromMinutes(5),
+                ScheduleToCloseTimeout = TimeSpan.FromMinutes(20),
+                StartToCloseTimeout    = TimeSpan.FromMinutes(5),
                 RetryPolicy = new()
                 {
-                    InitialInterval = TimeSpan.FromSeconds(2),
+                    InitialInterval    = TimeSpan.FromSeconds(2),
                     BackoffCoefficient = 2.0f,
-                    MaximumInterval = TimeSpan.FromSeconds(30),
-                    MaximumAttempts = 5
+                    MaximumInterval    = TimeSpan.FromMinutes(1),
+                    MaximumAttempts    = 5,
                 }
             });
 
@@ -31,13 +32,14 @@ public class DatabaseSetupWorkflow
             (DatabaseActivities act) => act.ApplySchemaUpgradesAsync(),
             new ActivityOptions
             {
-                StartToCloseTimeout = TimeSpan.FromMinutes(2),
+                ScheduleToCloseTimeout = TimeSpan.FromMinutes(20),
+                StartToCloseTimeout    = TimeSpan.FromMinutes(5),
                 RetryPolicy = new()
                 {
-                    InitialInterval = TimeSpan.FromSeconds(2),
+                    InitialInterval    = TimeSpan.FromSeconds(2),
                     BackoffCoefficient = 2.0f,
-                    MaximumInterval = TimeSpan.FromSeconds(30),
-                    MaximumAttempts = 5
+                    MaximumInterval    = TimeSpan.FromMinutes(1),
+                    MaximumAttempts    = 5,
                 }
             });
 
@@ -47,13 +49,14 @@ public class DatabaseSetupWorkflow
             (DatabaseActivities act) => act.SeedDatabaseAsync(),
             new ActivityOptions
             {
-                StartToCloseTimeout = TimeSpan.FromMinutes(5),
+                ScheduleToCloseTimeout = TimeSpan.FromMinutes(15),
+                StartToCloseTimeout    = TimeSpan.FromMinutes(5),
                 RetryPolicy = new()
                 {
-                    InitialInterval = TimeSpan.FromSeconds(2),
+                    InitialInterval    = TimeSpan.FromSeconds(2),
                     BackoffCoefficient = 2.0f,
-                    MaximumInterval = TimeSpan.FromSeconds(30),
-                    MaximumAttempts = 3
+                    MaximumInterval    = TimeSpan.FromMinutes(1),
+                    MaximumAttempts    = 3,
                 }
             });
 
@@ -63,13 +66,14 @@ public class DatabaseSetupWorkflow
             (DatabaseActivities act) => act.GenerateEmbeddingsAsync(),
             new ActivityOptions
             {
-                StartToCloseTimeout = TimeSpan.FromMinutes(5),
+                ScheduleToCloseTimeout = TimeSpan.FromMinutes(15),
+                StartToCloseTimeout    = TimeSpan.FromMinutes(5),
                 RetryPolicy = new()
                 {
-                    InitialInterval = TimeSpan.FromSeconds(2),
+                    InitialInterval    = TimeSpan.FromSeconds(2),
                     BackoffCoefficient = 2.0f,
-                    MaximumInterval = TimeSpan.FromSeconds(30),
-                    MaximumAttempts = 3
+                    MaximumInterval    = TimeSpan.FromMinutes(1),
+                    MaximumAttempts    = 3,
                 }
             });
 
