@@ -416,3 +416,9 @@ FodyWeavers.xsd
 
 .clans/
 .claude/
+
+# Aspire / azd generated deployment artifacts — regenerated on demand, never committed
+/infra/
+azure.yaml
+aspire-manifest.json
+.azure/

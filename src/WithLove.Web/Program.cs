@@ -156,6 +156,11 @@ builder.Services.AddTemporalClient(opts =>
     opts.TargetHost = connectOptions.TargetHost;
     opts.Namespace = connectOptions.Namespace;
     opts.Interceptors = [new TracingInterceptor()];
+    if (connectOptions.ApiKey is not null)
+    {
+        opts.ApiKey = connectOptions.ApiKey;
+        opts.Tls = connectOptions.Tls; // TlsOptions; null is fine — SDK auto-enables TLS when ApiKey is set
+    }
 });
 
 var app = builder.Build();
