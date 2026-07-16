@@ -24,7 +24,13 @@ public static class Extensions
         builder.Services.ConfigureHttpClientDefaults(http =>
         {
             // Turn on resilience by default
-            http.AddStandardResilienceHandler();
+            http.AddStandardResilienceHandler(options =>
+            {
+                // Azure SQL cold-start can take 8-10s; the default 10s attempt timeout
+                // is too aggressive — raise it to give cold-start queries room to complete.
+                options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(90);
+            });
 
             // Turn on service discovery by default
             http.AddServiceDiscovery();
