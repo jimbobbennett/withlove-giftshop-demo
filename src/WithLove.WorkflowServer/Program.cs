@@ -1,6 +1,5 @@
 using System.Diagnostics.Metrics;
 using Azure.Identity;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Temporalio.Common.EnvConfig;
