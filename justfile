@@ -33,6 +33,18 @@ compile: build
 run:
     dotnet run --project src/WithLove.AppHost
 
+# Deploy the application to Azure using the shared production defaults
+# Requires .secrets.env in the repo root — copy .secrets.env.example and fill in your values.
+deploy-azure environment="azureprod":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ ! -f .secrets.env ]]; then
+        echo "Error: .secrets.env not found. Copy .secrets.env.example and fill in your values." >&2
+        exit 1
+    fi
+    source .secrets.env
+    aspire deploy --environment {{environment}}
+
 # Run all tests
 test:
     dotnet test tests/WithLove.ProductsAPI.Tests/WithLove.ProductsAPI.Tests.csproj --logger "console;verbosity=normal"
@@ -48,4 +60,3 @@ test-integration:
     dotnet test tests/WithLove.ProductsAPI.Tests/WithLove.ProductsAPI.Tests.csproj \
         --filter "Category=Integration" \
         --logger "console;verbosity=normal"
-

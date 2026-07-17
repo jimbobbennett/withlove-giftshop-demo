@@ -422,3 +422,6 @@ FodyWeavers.xsd
 azure.yaml
 aspire-manifest.json
 .azure/
+
+# Local deployment secrets — fill in from .secrets.env.example, never commit
+.secrets.env
