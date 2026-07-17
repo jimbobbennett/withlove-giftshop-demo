@@ -23,11 +23,11 @@ Azure Container Apps Environment ("withlove-env")
    └── workflowServer (internal)
          │
          ├── Azure SQL Database     (replaces local SQL Server container)
-         ├── Azure Managed Redis    (replaces local Redis container)
+         ├── Redis container (ACA)  (same image as dev; no managed Redis)
          └── Temporal Cloud         (replaces local Temporal dev container)
 ```
 
-The AppHost uses `IsPublishMode` branching to swap every local dev container for its Azure managed equivalent. All secrets flow through Azure Key Vault, which injects values into each Container App as environment variables.
+The AppHost uses `IsPublishMode` branching to swap local dev services for Azure managed equivalents — except Redis. Azure Managed Redis has no Balanced SKUs available in US regions on this subscription and Azure Cache for Redis is being retired, so a Redis container is used in all environments. Cart data is ephemeral per deployment (no persistent volume in ACA). All secrets flow through Azure Key Vault, which injects values into each Container App as environment variables.
 
 **Scaling configuration (set in AppHost):**
 
@@ -127,12 +127,16 @@ The Stripe CLI container used in development is replaced by a Stripe Event Desti
 
 ## Step 5 — Update the webhook secret and redeploy
 
+`aspire deploy` manages its own parameter cache (see Step 1) independently of `aspire secret set`. Running `aspire secret set` here would update the local dev user secrets — not the deploy cache — so the placeholder would remain and Stripe webhook verification would fail.
+
+Pass the real secret as an environment variable on the deploy command instead:
+
 ```bash
-aspire secret set "Parameters:stripe-webhook-secret" "whsec_<your-real-secret>"
+Parameters__stripe_webhook_secret="whsec_<your-real-secret>" \
 aspire deploy --environment azureprod
 ```
 
-The second deploy writes the updated secret to Key Vault and Container Apps picks it up.
+This injects the value directly into the deploy pipeline for this run without altering the cache or requiring `--clear-cache`. The deploy writes the updated secret to Key Vault and Container Apps picks it up.
 
 ## Verification checklist
 
