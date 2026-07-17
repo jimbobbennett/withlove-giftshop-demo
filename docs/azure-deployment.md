@@ -175,9 +175,18 @@ aspire deploy --environment azureprod --non-interactive
 
 ## Secret rotation
 
-**Stripe webhook secret:** Rotate in Stripe Dashboard -> Webhooks -> select destination -> **Rotate secret**. Stripe accepts signatures from both the old and new secret for 24 hours. Run `aspire secret set` then `aspire deploy` to propagate the new value.
+**Stripe webhook secret:** Rotate in Stripe Dashboard -> Webhooks -> select destination -> **Rotate secret**. Stripe accepts signatures from both the old and new secret for 24 hours. Pass the new value via environment variable on the deploy command (same as Step 5 — `aspire secret set` updates local dev secrets, not the deploy cache):
 
-**All other secrets:** Update with `aspire secret set`, then run `aspire deploy`. Key Vault secrets are picked up by Container Apps within approximately 30 minutes automatically — a forced restart is not required for non-critical rotations.
+```bash
+Parameters__stripe_webhook_secret="whsec_<new-secret>" \
+aspire deploy --environment azureprod
+```
+
+**All other secrets:** Pass the new value as an environment variable on the deploy command. Key Vault secrets are picked up by Container Apps within approximately 30 minutes automatically — a forced restart is not required for non-critical rotations.
+
+```bash
+Parameters__openai_api_key="<new-key>" aspire deploy --environment azureprod
+```
 
 ## Teardown
 

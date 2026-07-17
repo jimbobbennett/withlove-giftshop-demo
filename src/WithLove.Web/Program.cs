@@ -189,6 +189,11 @@ var forwardedOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedProto
 };
+// Clear IP allowlists so the ACA ingress proxy is trusted regardless of its internal IP.
+// This is safe because the container is not internet-reachable: ACA's managed ingress is the
+// only entry point, and it strips/rewrites forwarded headers before they reach Kestrel.
+// In a non-ACA environment (direct internet exposure), restore KnownIPNetworks with the
+// specific proxy CIDR range instead of clearing it.
 forwardedOptions.KnownIPNetworks.Clear();
 forwardedOptions.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedOptions);
