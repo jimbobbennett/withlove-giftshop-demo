@@ -236,6 +236,21 @@ if (!isTestMode)
         // Sticky sessions for Blazor InteractiveServer / SignalR
         app.Configuration.Ingress.StickySessionsAffinity = StickySessionAffinity.Sticky;
 
+        // TCP readiness probe — MapHealthCheckEndpoints is gated by IsDevelopment() so
+        // HTTP health endpoints don't exist in production; TCP is the correct fallback.
+        var shopContainer = app.Template.Containers[0].Value!;
+        shopContainer.Probes =
+        [
+            new ContainerAppProbe
+            {
+                ProbeType           = ContainerAppProbeType.Readiness,
+                TcpSocket           = new ContainerAppTcpSocketRequestInfo { Port = 8080 },
+                InitialDelaySeconds = 10,
+                PeriodSeconds       = 5,
+                FailureThreshold    = 3,
+            },
+        ];
+
         // HTTP-based KEDA scaling — MinReplicas=1, MaxReplicas=10, 100 concurrent requests per replica
         app.Template.Scale.MinReplicas = 1;
         app.Template.Scale.MaxReplicas = 10;
