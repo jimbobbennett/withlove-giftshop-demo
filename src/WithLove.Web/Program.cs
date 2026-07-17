@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Microsoft.EntityFrameworkCore;
+using StackExchange.Redis;
 using Temporalio.Common.EnvConfig;
 using Temporalio.Extensions.OpenTelemetry;
 using WithLove.Data;
@@ -129,7 +130,14 @@ builder.Services.AddRazorComponents()
     .RegisterPersistentService<AnonymousCartSession>(RenderMode.InteractiveServer);
 
 builder.Services.AddMemoryCache();
-builder.AddRedisDistributedCache(connectionName: "redisCache");
+var redisConnectionString = builder.Configuration.GetConnectionString("redisCache")
+    ?? throw new InvalidOperationException("The redisCache connection string is required.");
+var redisOptions = ConfigurationOptions.Parse(redisConnectionString);
+redisOptions.Password = builder.Configuration["REDISCACHE_PASSWORD"];
+
+builder.AddRedisDistributedCache(
+    connectionName: "redisCache",
+    configureOptions: options => options.Password = redisOptions.Password);
 
 builder.Services.AddFusionCache()
     .WithDefaultEntryOptions(new FusionCacheEntryOptions
@@ -142,7 +150,7 @@ builder.Services.AddFusionCache()
     .WithRegisteredDistributedCache()
     .WithBackplane(new RedisBackplane(new RedisBackplaneOptions
     {
-        Configuration = builder.Configuration.GetConnectionString("redisCache")
+        ConfigurationOptions = redisOptions,
     }));
 
 builder.Services.AddHttpClient<IProductService, ProductApiService>(client =>
@@ -230,4 +238,3 @@ app.MapPost("/logout", async (SignInManager<ShopUser> signInManager) =>
 app.MapHealthCheckEndpoints();
 
 app.Run();
-

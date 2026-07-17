@@ -19,6 +19,7 @@ var isTestMode = builder.Configuration["TESTING"] == "true";
 var openaiKey           = builder.AddParameter("openai-api-key",       secret: true);
 var stripeApiKey        = builder.AddParameter("stripe-api-key",        secret: true);
 var stripePublicKey     = builder.AddParameter("stripe-public-key",     secret: true);
+var redisPassword       = builder.AddParameter("redis-password",         secret: true);
 
 // Additional parameters for publish mode (Temporal Cloud + Stripe webhook)
 var temporalAddress     = builder.AddParameter("temporal-address");
@@ -42,8 +43,9 @@ else
 }
 
 // Infrastructure — Redis (use container in all modes; Azure Managed Redis has no Balanced SKUs
-// available in US regions on this subscription, and Azure Cache for Redis is being retired)
-var redis = builder.AddRedis("redisCache");
+// available in US regions on this subscription, and Azure Cache for Redis is being retired).
+// Pass the password explicitly so the server and all referenced clients receive one shared secret.
+var redis = builder.AddRedis("redisCache", password: redisPassword);
 if (!builder.ExecutionContext.IsPublishMode)
     redis.WithRedisInsight();
 if (!isTestMode && !builder.ExecutionContext.IsPublishMode)

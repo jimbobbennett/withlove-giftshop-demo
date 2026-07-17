@@ -4,6 +4,7 @@ using Microsoft.Extensions.AI;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Scalar.AspNetCore;
+using StackExchange.Redis;
 using WithLove.Data;
 using WithLove.ProductsAPI.Endpoints;
 using WithLove.ProductsAPI.Middleware;
@@ -77,7 +78,14 @@ builder.Services.AddSingleton<Instrumentation>();
 builder.Services.AddOpenApi();
 
 builder.Services.AddMemoryCache();
-builder.AddRedisDistributedCache(connectionName: "redisCache");
+var redisConnectionString = builder.Configuration.GetConnectionString("redisCache")
+    ?? throw new InvalidOperationException("The redisCache connection string is required.");
+var redisOptions = ConfigurationOptions.Parse(redisConnectionString);
+redisOptions.Password = builder.Configuration["REDISCACHE_PASSWORD"];
+
+builder.AddRedisDistributedCache(
+    connectionName: "redisCache",
+    configureOptions: options => options.Password = redisOptions.Password);
 
 builder.Services.AddFusionCache()
     .WithDefaultEntryOptions(new FusionCacheEntryOptions
@@ -95,7 +103,7 @@ builder.Services.AddFusionCache()
     .WithRegisteredDistributedCache()
     .WithBackplane(
         new RedisBackplane(new RedisBackplaneOptions
-            { Configuration = builder.Configuration.GetConnectionString("redisCache") })
+            { ConfigurationOptions = redisOptions })
     );
 
 var openaiKey = builder.Configuration["OPENAI_API_KEY"] ?? "";
