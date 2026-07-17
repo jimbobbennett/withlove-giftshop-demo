@@ -49,4 +49,32 @@ public sealed class AzureSqlTokenInterceptor : DbConnectionInterceptor
             };
         }
     }
+
+    /// <summary>
+    /// Strips the <c>Authentication=</c> keyword from a SQL Server connection string and
+    /// signals whether managed-identity token auth should be used instead.
+    /// <para>
+    /// Aspire injects <c>Authentication=Active Directory Default</c> into connection strings
+    /// for Azure SQL resources. The SQL Client's built-in authentication provider conflicts
+    /// with <see cref="AzureSqlTokenInterceptor"/>, so the keyword must be removed before
+    /// passing the string to EF Core and token injection wired up separately.
+    /// </para>
+    /// </summary>
+    /// <param name="raw">The raw connection string from configuration.</param>
+    /// <returns>
+    /// The sanitised connection string and a flag indicating whether
+    /// <see cref="AzureSqlTokenInterceptor"/> should be registered.
+    /// </returns>
+    public static (string ConnectionString, bool UseTokenAuth) StripAuthenticationKeyword(string raw)
+    {
+        const string keyword = "Authentication=";
+        if (!raw.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+            return (raw, false);
+
+        // Split on ';', drop the Authentication=… segment, and rejoin.
+        var parts = raw.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                       .Where(p => !p.TrimStart().StartsWith(keyword, StringComparison.OrdinalIgnoreCase))
+                       .ToArray();
+        return (string.Join(';', parts), true);
+    }
 }

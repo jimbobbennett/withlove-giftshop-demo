@@ -45,7 +45,7 @@ builder.Services.AddSingleton<AzureSqlTokenInterceptor>(
 builder.Services.AddDbContext<ProductsDbContext>((sp, options) =>
 {
     var raw = builder.Configuration.GetConnectionString("productsDatabase") ?? string.Empty;
-    var (connStr, useTokenAuth) = StripAuthenticationKeyword(raw);
+    var (connStr, useTokenAuth) = AzureSqlTokenInterceptor.StripAuthenticationKeyword(raw);
 
     var sqlOptions = new Action<Microsoft.EntityFrameworkCore.Infrastructure.SqlServerDbContextOptionsBuilder>(
         o => o.EnableRetryOnFailure());
@@ -137,16 +137,3 @@ app.MapProductEndpoints();
 app.MapCategoryEndpoints();
 
 app.Run();
-
-static (string connectionString, bool useTokenAuth) StripAuthenticationKeyword(string raw)
-{
-    const string keyword = "Authentication=";
-    if (!raw.Contains(keyword, StringComparison.OrdinalIgnoreCase))
-        return (raw, false);
-
-    // Split on ';', remove the Authentication=... segment, rejoin
-    var parts = raw.Split(';', StringSplitOptions.RemoveEmptyEntries)
-                   .Where(p => !p.TrimStart().StartsWith(keyword, StringComparison.OrdinalIgnoreCase))
-                   .ToArray();
-    return (string.Join(';', parts), true);
-}
