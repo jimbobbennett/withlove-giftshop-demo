@@ -392,6 +392,15 @@
                 LineItems = lineItems,
                 ReturnUrl = $"{Navigation.BaseUri}order-confirmation?session_id={{CHECKOUT_SESSION_ID}}",
                 Customer = stripeCustomerId,
+                // When no Stripe Customer is attached, pass the email explicitly so Stripe
+                // pre-fills and locks the email field in the Payment Element iframe.
+                // Without this, the user sees their email in our readonly Blazor field and
+                // doesn't realise they also need to fill it inside Stripe's iframe —
+                // causing confirm() to reject with "email address is required".
+                // Stripe prohibits setting both Customer and CustomerEmail on the same session.
+                CustomerEmail = stripeCustomerId is null && !string.IsNullOrEmpty(checkoutModel.BillingEmail)
+                    ? checkoutModel.BillingEmail
+                    : null,
                 ShippingAddressCollection = new() { AllowedCountries = ["US", "CA", "GB", "AU"] },
                 Metadata = new Dictionary<string, string>()
             };

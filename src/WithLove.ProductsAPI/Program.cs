@@ -1,3 +1,4 @@
+using Azure.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using OpenTelemetry.Metrics;
@@ -38,10 +39,26 @@ builder.ConfigureOpenTelemetry()
 
 builder.AddDefaultHealthChecks();
 
-builder.Services.AddDbContext<ProductsDbContext>(options =>
+builder.Services.AddSingleton<AzureSqlTokenInterceptor>(
+    _ => new AzureSqlTokenInterceptor(new DefaultAzureCredential()));
+
+builder.Services.AddDbContext<ProductsDbContext>((sp, options) =>
 {
-    options.UseSqlServer(builder.Configuration.GetConnectionString("productsDatabase"),
-        sqlOptions => { sqlOptions.EnableRetryOnFailure(); });
+    var raw = builder.Configuration.GetConnectionString("productsDatabase") ?? string.Empty;
+    var (connStr, useTokenAuth) = StripAuthenticationKeyword(raw);
+
+    var sqlOptions = new Action<Microsoft.EntityFrameworkCore.Infrastructure.SqlServerDbContextOptionsBuilder>(
+        o => o.EnableRetryOnFailure());
+
+    if (useTokenAuth)
+    {
+        var interceptor = sp.GetRequiredService<AzureSqlTokenInterceptor>();
+        options.UseSqlServer(connStr, sqlOptions).AddInterceptors(interceptor);
+    }
+    else
+    {
+        options.UseSqlServer(connStr, sqlOptions);
+    }
 });
 
 builder.EnrichSqlServerDbContext<ProductsDbContext>(
@@ -120,3 +137,16 @@ app.MapProductEndpoints();
 app.MapCategoryEndpoints();
 
 app.Run();
+
+static (string connectionString, bool useTokenAuth) StripAuthenticationKeyword(string raw)
+{
+    const string keyword = "Authentication=";
+    if (!raw.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+        return (raw, false);
+
+    // Split on ';', remove the Authentication=... segment, rejoin
+    var parts = raw.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                   .Where(p => !p.TrimStart().StartsWith(keyword, StringComparison.OrdinalIgnoreCase))
+                   .ToArray();
+    return (string.Join(';', parts), true);
+}

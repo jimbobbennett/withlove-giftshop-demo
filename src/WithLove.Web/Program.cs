@@ -1,4 +1,6 @@
+using Azure.Identity;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -47,10 +49,26 @@ builder.AddDefaultHealthChecks();
 
 builder.Services.AddValidation();
 
-builder.Services.AddDbContext<ProductsDbContext>(options =>
+builder.Services.AddSingleton<AzureSqlTokenInterceptor>(
+    _ => new AzureSqlTokenInterceptor(new DefaultAzureCredential()));
+
+builder.Services.AddDbContext<ProductsDbContext>((sp, options) =>
 {
-    options.UseSqlServer(builder.Configuration.GetConnectionString("productsDatabase"),
-        sqlOptions => { sqlOptions.EnableRetryOnFailure(); });
+    var raw = builder.Configuration.GetConnectionString("productsDatabase") ?? string.Empty;
+    var (connStr, useTokenAuth) = StripAuthenticationKeyword(raw);
+
+    var sqlOptions = new Action<Microsoft.EntityFrameworkCore.Infrastructure.SqlServerDbContextOptionsBuilder>(
+        o => o.EnableRetryOnFailure());
+
+    if (useTokenAuth)
+    {
+        var interceptor = sp.GetRequiredService<AzureSqlTokenInterceptor>();
+        options.UseSqlServer(connStr, sqlOptions).AddInterceptors(interceptor);
+    }
+    else
+    {
+        options.UseSqlServer(connStr, sqlOptions);
+    }
 });
 
 builder.EnrichSqlServerDbContext<ProductsDbContext>(
@@ -156,9 +174,24 @@ builder.Services.AddTemporalClient(opts =>
     opts.TargetHost = connectOptions.TargetHost;
     opts.Namespace = connectOptions.Namespace;
     opts.Interceptors = [new TracingInterceptor()];
+    if (connectOptions.ApiKey is not null)
+    {
+        opts.ApiKey = connectOptions.ApiKey;
+        opts.Tls = connectOptions.Tls; // TlsOptions; null is fine — SDK auto-enables TLS when ApiKey is set
+    }
 });
 
 var app = builder.Build();
+
+// Must run first so all subsequent middleware (including UseHsts and UseHttpsRedirection)
+// sees the correct scheme from ACA's X-Forwarded-Proto header.
+var forwardedOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedProto
+};
+forwardedOptions.KnownIPNetworks.Clear();
+forwardedOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedOptions);
 
 if (!app.Environment.IsDevelopment())
 {
@@ -192,3 +225,16 @@ app.MapPost("/logout", async (SignInManager<ShopUser> signInManager) =>
 app.MapHealthCheckEndpoints();
 
 app.Run();
+
+static (string connectionString, bool useTokenAuth) StripAuthenticationKeyword(string raw)
+{
+    const string keyword = "Authentication=";
+    if (!raw.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+        return (raw, false);
+
+    // Split on ';', remove the Authentication=... segment, rejoin
+    var parts = raw.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                   .Where(p => !p.TrimStart().StartsWith(keyword, StringComparison.OrdinalIgnoreCase))
+                   .ToArray();
+    return (string.Join(';', parts), true);
+}

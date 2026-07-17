@@ -1,4 +1,5 @@
 using System.Diagnostics.Metrics;
+using Azure.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Temporalio.Common.EnvConfig;
@@ -7,9 +8,9 @@ using Temporalio.Extensions.Hosting;
 using Temporalio.Extensions.OpenTelemetry;
 using Temporalio.Runtime;
 using WithLove.Data;
+using WithLove.WorkflowServer.Services;
 using WithLove.Workflows.Activities;
 using WithLove.Workflows.Workflows;
-using WithLove.WorkflowServer.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,10 +35,26 @@ builder.AddDefaultHealthChecks();
 
 builder.Services.AddStripe();
 
-builder.Services.AddDbContext<ProductsDbContext>(options =>
+builder.Services.AddSingleton<AzureSqlTokenInterceptor>(
+    _ => new AzureSqlTokenInterceptor(new DefaultAzureCredential()));
+
+builder.Services.AddDbContext<ProductsDbContext>((sp, options) =>
 {
-    options.UseSqlServer(builder.Configuration.GetConnectionString("productsDatabase"),
-        sqlOptions => { sqlOptions.EnableRetryOnFailure(); });
+    var raw = builder.Configuration.GetConnectionString("productsDatabase") ?? string.Empty;
+    var (connStr, useTokenAuth) = StripAuthenticationKeyword(raw);
+
+    var sqlOptions = new Action<Microsoft.EntityFrameworkCore.Infrastructure.SqlServerDbContextOptionsBuilder>(
+        o => o.EnableRetryOnFailure());
+
+    if (useTokenAuth)
+    {
+        var interceptor = sp.GetRequiredService<AzureSqlTokenInterceptor>();
+        options.UseSqlServer(connStr, sqlOptions).AddInterceptors(interceptor);
+    }
+    else
+    {
+        options.UseSqlServer(connStr, sqlOptions);
+    }
 });
 
 builder.EnrichSqlServerDbContext<ProductsDbContext>(
@@ -93,6 +110,11 @@ builder.Services.AddHostedTemporalWorker(
         opts.ClientOptions ??= new();
         opts.ClientOptions.Runtime = temporalRuntime;
         opts.ClientOptions.Interceptors = [new TracingInterceptor()];
+        if (connectOptions.ApiKey is not null)
+        {
+            opts.ClientOptions.ApiKey = connectOptions.ApiKey;
+            opts.ClientOptions.Tls = connectOptions.Tls; // TlsOptions; null is fine — SDK auto-enables TLS when ApiKey is set
+        }
         opts.Interceptors = [new TracingInterceptor()];
     })
     .AddScopedActivities<DatabaseActivities>()
@@ -119,3 +141,16 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 await app.RunAsync();
+
+static (string connectionString, bool useTokenAuth) StripAuthenticationKeyword(string raw)
+{
+    const string keyword = "Authentication=";
+    if (!raw.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+        return (raw, false);
+
+    // Split on ';', remove the Authentication=... segment, rejoin
+    var parts = raw.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                   .Where(p => !p.TrimStart().StartsWith(keyword, StringComparison.OrdinalIgnoreCase))
+                   .ToArray();
+    return (string.Join(';', parts), true);
+}
