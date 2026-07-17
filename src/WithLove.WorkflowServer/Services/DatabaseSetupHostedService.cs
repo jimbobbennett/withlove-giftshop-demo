@@ -24,7 +24,16 @@ public partial class DatabaseSetupHostedService(ILogger<DatabaseSetupHostedServi
                 (DatabaseSetupWorkflow wf) => wf.RunAsync(),
                 new WorkflowOptions(id: WorkflowId, taskQueue: TaskQueue)
                 {
-                    IdReusePolicy    = WorkflowIdReusePolicy.AllowDuplicateFailedOnly,
+                    // AllowDuplicate: lets a new run start even if the previous one completed
+                    // successfully. This handles the destroy-and-recreate scenario where Azure
+                    // SQL is a fresh empty database but Temporal still holds a completed workflow
+                    // from the prior deployment. Without this, setup is permanently skipped and
+                    // ProductsAPI returns 500 on every request.
+                    // UseExisting: if setup is already running (parallel restart), attach to it
+                    // and wait rather than starting a second concurrent run.
+                    // The activities themselves are idempotent: EnsureCreated is a no-op on an
+                    // existing schema, and SeedDatabaseAsync checks for existing products first.
+                    IdReusePolicy    = WorkflowIdReusePolicy.AllowDuplicate,
                     IdConflictPolicy = WorkflowIdConflictPolicy.UseExisting,
                     RunTimeout       = TimeSpan.FromMinutes(90),
                 });

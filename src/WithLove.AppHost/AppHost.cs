@@ -153,7 +153,7 @@ if (!isTestMode)
     // Key Vault — publish mode only; secrets injected into each service
     if (builder.ExecutionContext.IsPublishMode)
     {
-        var keyVault = builder.AddAzureKeyVault("withlove-keyvault");
+        var keyVault = builder.AddAzureKeyVault("keyvault");
         var sharedIdentity = builder.AddAzureUserAssignedIdentity("withlove-identity");
 
         // KV secret names must not collide with parameter resource names (both live in the
