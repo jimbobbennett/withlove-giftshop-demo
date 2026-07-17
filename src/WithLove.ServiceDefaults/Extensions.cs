@@ -26,10 +26,20 @@ public static class Extensions
             // Turn on resilience by default
             http.AddStandardResilienceHandler(options =>
             {
-                // Azure SQL cold-start can take 8-10s; the default 10s attempt timeout
-                // is too aggressive — raise it to give cold-start queries room to complete.
+                // These timeouts govern HTTP service-to-service calls (HttpClient), not
+                // SQL or Redis connections — those have their own timeout/retry settings.
+                //
+                // The default AttemptTimeout of 10s is too tight when a downstream service
+                // experiences first-request latency (e.g. Web → productsApi while productsApi
+                // is waiting on Azure SQL cold-start). The caller would cancel the HTTP
+                // request before the downstream could respond, which propagates as a
+                // TaskCanceledException in productsApi's logs. Raising to 30s gives each
+                // HTTP hop enough runway to absorb typical cold-start delays.
                 options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
                 options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(90);
+                // SamplingDuration must be >= 2x AttemptTimeout per Polly's validation rules.
+                // Default is 30s; raise to 60s to satisfy the constraint.
+                options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
             });
 
             // Turn on service discovery by default
