@@ -27,7 +27,7 @@ Azure Container Apps Environment ("withlove-env")
          └── Temporal Cloud         (replaces local Temporal dev container)
 ```
 
-The AppHost uses `IsPublishMode` branching to swap local dev services for Azure managed equivalents — except Redis. Azure Managed Redis has no Balanced SKUs available in US regions on this subscription and Azure Cache for Redis is being retired, so a Redis container is used in all environments. Cart data is ephemeral per deployment (no persistent volume in ACA). All secrets flow through Azure Key Vault, which injects values into each Container App as environment variables.
+The AppHost's Azure publish configuration swaps local development services for Azure-managed equivalents — except Redis. Azure Managed Redis has no Balanced SKUs available in US regions on this subscription and Azure Cache for Redis is being retired, so a Redis container is used in all environments. Cart data is ephemeral per deployment (no persistent volume in ACA). All secrets flow through Azure Key Vault, which injects values into each Container App as environment variables.
 
 **Scaling configuration (set in AppHost):**
 

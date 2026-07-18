@@ -23,6 +23,7 @@ Set up secrets using the Aspire CLI (Aspire 13.2+). Run from the repo root — A
 aspire secret set Parameters:openai-api-key "<your-openai-key>"
 aspire secret set Parameters:stripe-api-key "<your-stripe-secret-key>"
 aspire secret set Parameters:stripe-public-key "<your-stripe-public-key>"
+aspire secret set Parameters:stripe-webhook-secret "<whsec_...>"  # printed by stripe listen on first run
 ```
 
 Verify your secrets are stored:
@@ -99,6 +100,41 @@ The application uses Temporal for durable, long-lived operations:
 | **CustomerOnboardingWorkflow** | New customer registration flow | Creates Stripe customer record and links to user account; ensures customer data is synced with payment processor |
 
 **Access Temporal UI**: The Aspire dashboard provides a **Temporal UI** link showing all workflows, executions, task queues, and event histories.
+
+## Azure Deployment
+
+The application deploys to Azure Container Apps via the Aspire CLI.
+
+### Additional Prerequisites
+
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) — authenticated with `az login`
+- [Temporal CLI](https://docs.temporal.io/cli) — for workflow management during teardown
+- [just](https://just.systems) — task runner (`brew install just` on macOS)
+- A [Temporal Cloud](https://cloud.temporal.io) account — the app uses Temporal Cloud in production (not the local container)
+
+### Setup
+
+Copy the secrets template and fill in your values:
+
+```bash
+cp .secrets.env.example .secrets.env
+# Edit .secrets.env — Azure subscription details, API keys, Temporal Cloud credentials
+```
+
+### Deploy
+
+```bash
+just deploy          # deploy to azureprod (incremental — reuses cached infra state)
+just deploy-clean    # deploy with fresh state (use after changing location or resource group)
+```
+
+### Destroy
+
+```bash
+just destroy         # tear down all Azure resources and wait for full deletion
+```
+
+See [docs/azure-deployment.md](docs/azure-deployment.md) for detailed configuration, environment variables, and troubleshooting.
 
 ## License
 
