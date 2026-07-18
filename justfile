@@ -37,7 +37,7 @@ run:
 # Requires .secrets.env in the repo root — copy .secrets.env.example and fill in your values.
 #   just deploy-azure           # deploy to azureprod (uses cached state)
 #   just deploy-azure staging   # deploy to a different environment
-deploy-azure environment="azureprod":
+deploy environment="azureprod":
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ ! -f .secrets.env ]]; then
@@ -51,7 +51,7 @@ deploy-azure environment="azureprod":
 # Use this after changing Azure__Location, Azure__ResourceGroup, or similar infra-level settings.
 #   just deploy-azure-clean           # deploy to azureprod with fresh state
 #   just deploy-azure-clean staging   # deploy to staging with fresh state
-deploy-azure-clean environment="azureprod":
+deploy-clean environment="azureprod":
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ ! -f .secrets.env ]]; then
@@ -65,13 +65,15 @@ deploy-azure-clean environment="azureprod":
 # aspire destroy returns as soon as ARM accepts the request; the actual teardown is
 # async and can take 2-5 minutes. This recipe blocks until deletion is complete so
 # it's safe to redeploy immediately after.
-# Note: the database setup workflow in Temporal Cloud is NOT terminated here because
-# terminate only affects running workflows, not completed ones. The WorkflowServer
-# uses AllowDuplicate so it starts a fresh run on the next deploy automatically.
-#   just destroy-azure                    # destroy azureprod, wait up to 600s
-#   just destroy-azure staging            # destroy a named environment
-#   just destroy-azure azureprod 300      # custom timeout in seconds
-destroy-azure environment="azureprod" timeout="600":
+# Also attempts to terminate the database setup workflow in Temporal Cloud. This only
+# affects a workflow that is currently RUNNING — if it has already completed, terminate
+# is a no-op (and AllowDuplicate in the code handles the re-run on next deploy anyway).
+# The value here is stopping a mid-run workflow from burning 90 min of retries against
+# a SQL Server that no longer exists.
+#   just destroy                    # destroy azureprod, wait up to 600s
+#   just destroy staging            # destroy a named environment
+#   just destroy azureprod 300      # custom timeout in seconds
+destroy environment="azureprod" timeout="600":
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ ! -f .secrets.env ]]; then
@@ -79,6 +81,15 @@ destroy-azure environment="azureprod" timeout="600":
         exit 1
     fi
     source .secrets.env
+    # Best-effort: stop a running db-setup workflow so it doesn't spin against a
+    # deleted SQL Server. Silent no-op if the workflow is already completed or absent.
+    temporal workflow terminate \
+        --workflow-id withlove-db-setup \
+        --namespace "${Parameters__temporal_namespace}" \
+        --address "${Parameters__temporal_address}" \
+        --api-key "${Parameters__temporal_api_key}" \
+        --reason "Azure resources being destroyed" \
+        2>/dev/null && echo "Terminated running db-setup workflow." || true
     aspire destroy --environment {{environment}}
     if az group show --name "${Azure__ResourceGroup}" &>/dev/null; then
         echo "Waiting for resource group '${Azure__ResourceGroup}' to finish deleting (timeout: {{timeout}}s)..."
