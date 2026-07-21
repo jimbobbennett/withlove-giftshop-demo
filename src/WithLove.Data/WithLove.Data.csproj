@@ -9,9 +9,9 @@
   <ItemGroup>
     <!-- Entity Framework Core -->
     <PackageReference Include="Azure.Core" Version="1.60.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.9" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.9" />
-<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.9" />
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
 
     <!-- Aspire Integration -->
     <PackageReference Include="Aspire.Microsoft.EntityFrameworkCore.SqlServer" Version="13.4.6" />
