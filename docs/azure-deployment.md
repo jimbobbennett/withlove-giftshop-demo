@@ -39,6 +39,11 @@ The AppHost's Azure publish configuration swaps local development services for A
 
 workflowServer never scales to zero because it must continuously poll Temporal Cloud for tasks.
 
+The AppHost represents the existing namespace with `TemporalCommunity.Aspire.Hosting` and
+injects its connection settings into the Web and Workflow Server container apps. The Temporal
+Cloud resource is excluded from deployment manifests, so deployment does not create the
+namespace or register its search attributes.
+
 shopSite uses sticky sessions — required for Blazor InteractiveServer (SignalR).
 
 workflowServer uses TCP-only health probes because the HTTP `/health` endpoint is only exposed in development.

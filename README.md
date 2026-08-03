@@ -24,6 +24,7 @@ aspire secret set Parameters:openai-api-key "<your-openai-key>"
 aspire secret set Parameters:stripe-api-key "<your-stripe-secret-key>"
 aspire secret set Parameters:stripe-public-key "<your-stripe-public-key>"
 aspire secret set Parameters:stripe-webhook-secret "<whsec_...>"  # printed by stripe listen on first run
+aspire secret set Parameters:redis-password "<local-redis-password>"
 ```
 
 Verify your secrets are stored:
@@ -38,7 +39,12 @@ To retrieve a single secret:
 aspire secret get Parameters:openai-api-key
 ```
 
-The AppHost injects these into the appropriate projects:
+The AppHost injects these values into the appropriate projects.
+
+The AppHost uses `TemporalCommunity.Aspire.Hosting` to run a persistent Temporal development
+container locally and to represent the existing Temporal Cloud namespace during publishing.
+The Cloud resource supplies connection settings to the Web and Workflow Server projects; it
+does not provision the Temporal Cloud namespace or its search attributes.
 
 ## Running the Application
 

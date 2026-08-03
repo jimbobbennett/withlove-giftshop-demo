@@ -1,7 +1,7 @@
 using Aspire.Hosting.Azure;
 using Azure.Provisioning.KeyVault;
+using TemporalCommunity.Aspire.Hosting;
 using Temporalio.Common;
-using WithLove.AppHost.Resources;
 
 namespace WithLove.AppHost.Extensions;
 
@@ -147,15 +147,14 @@ internal static partial class WithLoveApplicationExtensions
                 SearchAttributeKey.CreateKeyword("StripeSessionId"),
                 SearchAttributeKey.CreateKeyword("CustomerId"),
             ];
-            options.DbFilename = "/home/temporal/temporal.db";
+            options.DevServerOptions.DatabaseFilename = "/home/temporal/temporal.db";
         });
 
         // Docker copy-up preserves the temporal user's ownership of this volume.
         temporalServer.WithVolume("temporal-data", "/home/temporal");
 
-        IResourceBuilder<Aspire.Hosting.IResourceWithServiceDiscovery> temporalService = temporalServer;
-        application.WorkflowServer.WaitForAndReference(temporalService);
-        application.ShopSite.WaitForAndReference(temporalService);
+        application.WorkflowServer.WaitForAndReference(temporalServer);
+        application.ShopSite.WaitForAndReference(temporalServer);
 
         // Referencing the CLI container supplies the Stripe__Default__* configuration locally.
         var stripe = builder.AddStripeCliContainer(
@@ -182,8 +181,7 @@ internal static partial class WithLoveApplicationExtensions
         keyVault.AddSecret("kv-stripe-webhook-secret", parameters.StripeWebhookSecret);
         keyVault.AddSecret("kv-temporal-api-key", parameters.TemporalApiKey);
 
-        var temporalCloud = TemporalCommunity.Aspire.Hosting.TemporalCloudResourceExtensions.AddTemporalCloud(
-            builder,
+        var temporalCloud = builder.AddTemporalCloud(
             "temporal-cloud",
             parameters.TemporalAddress,
             parameters.TemporalNamespace,
@@ -202,12 +200,8 @@ internal static partial class WithLoveApplicationExtensions
             .WithEnvironment("Stripe__Default__PublicKey", keyVault.GetSecret("kv-stripe-public-key"))
             .WithEnvironment("Stripe__Default__WebhookSecret", keyVault.GetSecret("kv-stripe-webhook-secret"));
 
-        TemporalCommunity.Aspire.Hosting.TemporalCloudResourceExtensions.WithReference(
-            workflowServer,
-            temporalCloud);
-        TemporalCommunity.Aspire.Hosting.TemporalCloudResourceExtensions.WithReference(
-            shopSite,
-            temporalCloud);
+        workflowServer.WithReference(temporalCloud);
+        shopSite.WithReference(temporalCloud);
     }
 
     private static IResourceBuilder<ProjectResource> ConfigureKeyVaultAccess(
@@ -226,7 +220,12 @@ internal static partial class WithLoveApplicationExtensions
 
     private static IResourceBuilder<ProjectResource> WaitForAndReference(
         this IResourceBuilder<ProjectResource> project,
-        IResourceBuilder<Aspire.Hosting.IResourceWithServiceDiscovery> dependency)
+        IResourceBuilder<ProjectResource> dependency)
+        => project.WaitFor(dependency).WithReference(dependency);
+
+    private static IResourceBuilder<ProjectResource> WaitForAndReference(
+        this IResourceBuilder<ProjectResource> project,
+        IResourceBuilder<TemporalContainerResource> dependency)
         => project.WaitFor(dependency).WithReference(dependency);
 
     private sealed record WithLoveParameters(
