@@ -102,7 +102,7 @@ public class StripeOrderService(
         try
         {
             session = await sessionService.GetAsync(sessionId,
-                new SessionGetOptions { Expand = ["customer"] }, cancellationToken: ct);
+                new SessionGetOptions { Expand = ["customer", "payment_intent.latest_charge"] }, cancellationToken: ct);
         }
         catch (StripeException) { return null; }
 
@@ -187,6 +187,7 @@ public class StripeOrderService(
             Status: "Confirmed",
             PlacedAt: session.Created,
             AmountTotal: (session.AmountTotal ?? 0) / 100m,
-            LineItems: views);
+            LineItems: views,
+            ReceiptUrl: session.PaymentIntent?.LatestCharge?.ReceiptUrl);
     }
 }
