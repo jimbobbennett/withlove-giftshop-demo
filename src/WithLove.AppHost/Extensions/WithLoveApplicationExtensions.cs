@@ -172,13 +172,6 @@ internal static partial class WithLoveApplicationExtensions
         WithLoveApplication application,
         WithLoveParameters parameters)
     {
-        foreach (var service in new[] { application.WorkflowServer, application.ShopSite })
-        {
-            service
-                .WithEnvironment("TEMPORAL_ADDRESS", parameters.TemporalAddress)
-                .WithEnvironment("TEMPORAL_NAMESPACE", parameters.TemporalNamespace);
-        }
-
         var keyVault = builder.AddAzureKeyVault("keyvault");
         var sharedIdentity = builder.AddAzureUserAssignedIdentity("withlove-identity");
 
@@ -189,20 +182,32 @@ internal static partial class WithLoveApplicationExtensions
         keyVault.AddSecret("kv-stripe-webhook-secret", parameters.StripeWebhookSecret);
         keyVault.AddSecret("kv-temporal-api-key", parameters.TemporalApiKey);
 
+        var temporalCloud = TemporalCommunity.Aspire.Hosting.TemporalCloudResourceExtensions.AddTemporalCloud(
+            builder,
+            "temporal-cloud",
+            parameters.TemporalAddress,
+            parameters.TemporalNamespace,
+            configure: options => options.ApiKey = keyVault.GetSecret("kv-temporal-api-key"));
+
         ConfigureKeyVaultAccess(application.ProductsApi, keyVault, sharedIdentity)
             .WithEnvironment("OPENAI_API_KEY", keyVault.GetSecret("kv-openai-api-key"));
 
-        ConfigureKeyVaultAccess(application.WorkflowServer, keyVault, sharedIdentity)
+        var workflowServer = ConfigureKeyVaultAccess(application.WorkflowServer, keyVault, sharedIdentity)
             .WithEnvironment("OPENAI_API_KEY", keyVault.GetSecret("kv-openai-api-key"))
-            .WithEnvironment("Stripe__Default__ApiKey", keyVault.GetSecret("kv-stripe-api-key"))
-            .WithEnvironment("TEMPORAL_API_KEY", keyVault.GetSecret("kv-temporal-api-key"));
+            .WithEnvironment("Stripe__Default__ApiKey", keyVault.GetSecret("kv-stripe-api-key"));
 
-        ConfigureKeyVaultAccess(application.ShopSite, keyVault, sharedIdentity)
+        var shopSite = ConfigureKeyVaultAccess(application.ShopSite, keyVault, sharedIdentity)
             .WithEnvironment("OPENAI_API_KEY", keyVault.GetSecret("kv-openai-api-key"))
             .WithEnvironment("Stripe__Default__ApiKey", keyVault.GetSecret("kv-stripe-api-key"))
             .WithEnvironment("Stripe__Default__PublicKey", keyVault.GetSecret("kv-stripe-public-key"))
-            .WithEnvironment("Stripe__Default__WebhookSecret", keyVault.GetSecret("kv-stripe-webhook-secret"))
-            .WithEnvironment("TEMPORAL_API_KEY", keyVault.GetSecret("kv-temporal-api-key"));
+            .WithEnvironment("Stripe__Default__WebhookSecret", keyVault.GetSecret("kv-stripe-webhook-secret"));
+
+        TemporalCommunity.Aspire.Hosting.TemporalCloudResourceExtensions.WithReference(
+            workflowServer,
+            temporalCloud);
+        TemporalCommunity.Aspire.Hosting.TemporalCloudResourceExtensions.WithReference(
+            shopSite,
+            temporalCloud);
     }
 
     private static IResourceBuilder<ProjectResource> ConfigureKeyVaultAccess(
