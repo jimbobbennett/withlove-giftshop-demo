@@ -290,10 +290,10 @@ deploy-clean environment="azureprod":
 # is a no-op (and AllowDuplicate in the code handles the re-run on next deploy anyway).
 # The value here is stopping a mid-run workflow from burning 90 min of retries against
 # a SQL Server that no longer exists.
-#   just destroy                    # destroy azureprod, wait up to 1200s
+#   just destroy                    # destroy azureprod, wait up to 3600s
 #   just destroy staging            # destroy a named environment
-#   just destroy azureprod 300      # custom timeout in seconds
-destroy environment="azureprod" timeout="1200":
+#   just destroy azureprod 1800     # custom timeout in seconds
+destroy environment="azureprod" timeout="3600":
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ ! -f .secrets.env ]]; then
@@ -390,21 +390,43 @@ destroy environment="azureprod" timeout="1200":
     if [[ "${resource_group_exists}" == "true" ]]; then
         echo "Waiting for resource group '${Azure__ResourceGroup}' to finish deleting (timeout: {{timeout}}s)..."
         destroy_deadline=$((SECONDS + {{timeout}}))
-        while [[ "${resource_group_exists}" == "true" ]]; do
+        while true; do
+            # Refresh Azure state before evaluating the deadline so a resource group that
+            # disappeared during the previous sleep cannot be reported as a timeout.
+            resource_group_exists="$(az group exists \
+                --subscription "${Azure__SubscriptionId}" \
+                --name "${Azure__ResourceGroup}" \
+                --output tsv)"
+            if [[ "${resource_group_exists}" != "true" ]]; then
+                break
+            fi
+
             if (( SECONDS >= destroy_deadline )); then
                 resource_group_state="$(az group show \
                     --subscription "${Azure__SubscriptionId}" \
                     --name "${Azure__ResourceGroup}" \
                     --query properties.provisioningState \
                     --output tsv 2>/dev/null || true)"
-                echo "Timed out waiting for resource group '${Azure__ResourceGroup}' to disappear; current state is '${resource_group_state:-unknown}'." >&2
+                remaining_resource_count="$(az resource list \
+                    --subscription "${Azure__SubscriptionId}" \
+                    --resource-group "${Azure__ResourceGroup}" \
+                    --query 'length(@)' \
+                    --output tsv 2>/dev/null || printf 'unknown')"
+                resource_lock_count="$(az lock list \
+                    --subscription "${Azure__SubscriptionId}" \
+                    --resource-group "${Azure__ResourceGroup}" \
+                    --query 'length(@)' \
+                    --output tsv 2>/dev/null || printf 'unknown')"
+
+                echo "Timed out after {{timeout}}s waiting for resource group '${Azure__ResourceGroup}' to disappear." >&2
+                echo "  Current state: ${resource_group_state:-unknown}" >&2
+                echo "  Remaining resources: ${remaining_resource_count:-unknown}" >&2
+                echo "  Resource locks: ${resource_lock_count:-unknown}" >&2
+                echo "Azure deletion continues asynchronously; it is not safe to deploy yet." >&2
+                echo "Re-run 'just destroy {{environment}} {{timeout}}' to resume waiting and complete Key Vault cleanup." >&2
                 exit 1
             fi
             sleep 15
-            resource_group_exists="$(az group exists \
-                --subscription "${Azure__SubscriptionId}" \
-                --name "${Azure__ResourceGroup}" \
-                --output tsv)"
         done
         echo "Resource group fully deleted."
     else

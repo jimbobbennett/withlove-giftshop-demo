@@ -217,7 +217,9 @@ just deploy
 just destroy
 ```
 
-This first uses Aspire's destroy pipeline when its app-scoped state matches `.secrets.env`. If a failed deployment never saved state, or stale state points elsewhere, it falls back to deleting only the explicitly configured resource group. It then waits for deletion, purges matching soft-deleted Key Vaults, and removes the exact local environment state file so the next `just deploy` starts cleanly.
+This first uses Aspire's destroy pipeline when its app-scoped state matches `.secrets.env`. If a failed deployment never saved state, or stale state points elsewhere, it falls back to deleting only the explicitly configured resource group. It waits up to 3,600 seconds by default for Azure to confirm that the resource group no longer exists, then purges matching soft-deleted Key Vaults and removes the exact local environment state file so the next `just deploy` starts cleanly.
+
+Azure resource-group deletion is asynchronous and can spend an extended period in `Deleting` even after all contained resources are gone. If the timeout is reached, the recipe reports the current state plus remaining resource and lock counts, exits without claiming success, and leaves Azure's deletion running. Re-run `just destroy` to resume waiting and finish Key Vault cleanup. Override the wait ceiling when needed with `just destroy azureprod <seconds>`.
 
 ## Generated files (do not commit)
 
