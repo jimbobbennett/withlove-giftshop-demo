@@ -7,6 +7,8 @@ namespace WithLove.AppHost.Extensions;
 
 internal static partial class WithLoveApplicationExtensions
 {
+    private const string ProductsDatabaseResourceName = "productsDatabase";
+
     public static void AddWithLoveApplication(
         this IDistributedApplicationBuilder builder,
         bool isPublishMode,
@@ -26,7 +28,7 @@ internal static partial class WithLoveApplicationExtensions
         var application = AddFullApplication(builder, infrastructure, parameters, productsApi);
 
         if (isPublishMode)
-            ConfigureAzureDependencies(builder, application, parameters);
+            ConfigureAzureDependencies(builder, application, infrastructure, parameters);
         else
             ConfigureLocalDependencies(builder, application, parameters);
 
@@ -52,9 +54,14 @@ internal static partial class WithLoveApplicationExtensions
         WithLoveParameters parameters)
     {
         IResourceBuilder<IResourceWithConnectionString> productsDatabase;
+        IResourceBuilder<AzureSqlServerResource>? azureSqlServer = null;
         if (isPublishMode)
         {
-            productsDatabase = builder.AddAzureSqlServer("sqlServer").AddDatabase("productsDatabase");
+            azureSqlServer = builder.AddAzureSqlServer("sqlServer")
+                // Aspire 13.4.6 generates one incompatible SQL role script per consumer.
+                // A single shared identity only needs one database principal, provisioned below.
+                .ClearDefaultRoleAssignments();
+            productsDatabase = azureSqlServer.AddDatabase(ProductsDatabaseResourceName);
         }
         else
         {
@@ -65,19 +72,23 @@ internal static partial class WithLoveApplicationExtensions
             if (!isTestMode)
                 sqlServer.WithDataVolume("mssql-data");
 
-            productsDatabase = sqlServer.AddDatabase("productsDatabase");
+            productsDatabase = sqlServer.AddDatabase(ProductsDatabaseResourceName);
         }
 
         // Azure Managed Redis has no Balanced SKUs available in US regions on this subscription,
-        // and Azure Cache for Redis is being retired. Use a password so all clients share one secret.
-        var redis = builder.AddRedis("redisCache", password: parameters.RedisPassword);
+        // and Azure Cache for Redis is being retired. Keep one stable password across deployments
+        // so a reused Redis revision and newly deployed consumers cannot drift out of sync.
+        // The disposable integration-test topology intentionally has no external parameters.
+        var redis = isTestMode
+            ? builder.AddRedis("redisCache")
+            : builder.AddRedis("redisCache", password: parameters.RedisPassword);
         if (!isPublishMode)
             redis.WithRedisInsight();
         if (!isTestMode && !isPublishMode)
             redis.WithDataVolume("redis-data");
 
         IResourceBuilder<IResourceWithConnectionString> redisCache = redis;
-        return new WithLoveInfrastructure(productsDatabase, redisCache);
+        return new WithLoveInfrastructure(productsDatabase, redisCache, azureSqlServer);
     }
 
     private static IResourceBuilder<ProjectResource> AddProductsApi(
@@ -169,10 +180,12 @@ internal static partial class WithLoveApplicationExtensions
     private static void ConfigureAzureDependencies(
         IDistributedApplicationBuilder builder,
         WithLoveApplication application,
+        WithLoveInfrastructure infrastructure,
         WithLoveParameters parameters)
     {
         var keyVault = builder.AddAzureKeyVault("keyvault");
         var sharedIdentity = builder.AddAzureUserAssignedIdentity("withlove-identity");
+        var sqlIdentityAccess = AddAzureSqlIdentityAccess(builder, infrastructure, sharedIdentity);
 
         // Key Vault secret names must not collide with parameter resource names.
         keyVault.AddSecret("kv-openai-api-key", parameters.OpenAiKey);
@@ -202,6 +215,39 @@ internal static partial class WithLoveApplicationExtensions
 
         workflowServer.WithReference(temporalCloud);
         shopSite.WithReference(temporalCloud);
+
+        // The output reference makes the Azure Container App modules depend on the completed
+        // SQL access deployment. WaitFor alone only affects run-mode resource readiness.
+        var sqlIdentityAccessMarker = sqlIdentityAccess.GetOutput("deploymentScriptName");
+        application.ProductsApi
+            .WithEnvironment("WITHLOVE_SQL_IDENTITY_ACCESS", sqlIdentityAccessMarker)
+            .WaitFor(sqlIdentityAccess);
+        application.WorkflowServer
+            .WithEnvironment("WITHLOVE_SQL_IDENTITY_ACCESS", sqlIdentityAccessMarker)
+            .WaitFor(sqlIdentityAccess);
+        application.ShopSite
+            .WithEnvironment("WITHLOVE_SQL_IDENTITY_ACCESS", sqlIdentityAccessMarker)
+            .WaitFor(sqlIdentityAccess);
+    }
+
+    private static IResourceBuilder<AzureBicepResource> AddAzureSqlIdentityAccess(
+        IDistributedApplicationBuilder builder,
+        WithLoveInfrastructure infrastructure,
+        IResourceBuilder<AzureUserAssignedIdentityResource> sharedIdentity)
+    {
+        var sqlServer = infrastructure.AzureSqlServer
+            ?? throw new InvalidOperationException("Azure SQL identity access is only available in publish mode.");
+
+        return builder.AddBicepTemplate(
+                "sql-identity-access",
+                "Resources/sql-identity-access.bicep")
+            .WithParameter("sqlServerName", sqlServer.Resource.NameOutputReference)
+            .WithParameter(
+                "sqlServerAdminName",
+                new BicepOutputReference("sqlServerAdminName", sqlServer.Resource))
+            .WithParameter("databaseName", ProductsDatabaseResourceName)
+            .WithParameter("principalName", sharedIdentity.Resource.NameOutputReference)
+            .WithParameter("principalClientId", sharedIdentity.Resource.ClientId);
     }
 
     private static IResourceBuilder<ProjectResource> ConfigureKeyVaultAccess(
@@ -240,7 +286,8 @@ internal static partial class WithLoveApplicationExtensions
 
     private sealed record WithLoveInfrastructure(
         IResourceBuilder<IResourceWithConnectionString> ProductsDatabase,
-        IResourceBuilder<IResourceWithConnectionString> RedisCache);
+        IResourceBuilder<IResourceWithConnectionString> RedisCache,
+        IResourceBuilder<AzureSqlServerResource>? AzureSqlServer);
 
     private sealed record WithLoveApplication(
         IResourceBuilder<ProjectResource> ProductsApi,
