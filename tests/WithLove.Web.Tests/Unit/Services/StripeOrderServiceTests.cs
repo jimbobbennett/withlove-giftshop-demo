@@ -273,6 +273,47 @@ public class StripeOrderServiceTests
     [Fact]
     [Trait(TestTraits.Category, TestTraits.Unit)]
     [Trait(TestTraits.Feature, TestTraits.Orders)]
+    public async Task GetOrderAsync_IncludesStripeReceiptUrl()
+    {
+        const string sessionId = "cs_test_receipt";
+        var confirmationNumber = OrderInfo.GenerateConfirmationNumber(sessionId);
+        const string receiptUrl = "https://pay.stripe.com/receipts/test";
+
+        A.CallTo(() => _cache.GetOrDefaultAsync<string>(
+                A<string>.That.Matches(k => k.Contains(confirmationNumber)),
+                A<string>._,
+                A<FusionCacheEntryOptions?>._,
+                A<CancellationToken>._))
+            .Returns(new ValueTask<string?>(sessionId));
+
+        var session = MakeSession(sessionId);
+        session.PaymentIntent = new PaymentIntent
+        {
+            LatestCharge = new Charge { ReceiptUrl = receiptUrl }
+        };
+        A.CallTo(() => _sessions.GetAsync(
+                sessionId,
+                A<SessionGetOptions>._,
+                A<RequestOptions>._,
+                A<CancellationToken>._))
+            .Returns(session);
+        A.CallTo(() => _userManager.FindByIdAsync(UserId)).Returns(MakeUser());
+        A.CallTo(() => _lineItems.ListAsync(
+                sessionId,
+                A<SessionLineItemListOptions>._,
+                A<RequestOptions>._,
+                A<CancellationToken>._))
+            .Returns(MakeLineItemPage([]));
+
+        var result = await CreateSut().GetOrderAsync(UserId, confirmationNumber);
+
+        result.Should().NotBeNull();
+        result!.ReceiptUrl.Should().Be(receiptUrl);
+    }
+
+    [Fact]
+    [Trait(TestTraits.Category, TestTraits.Unit)]
+    [Trait(TestTraits.Feature, TestTraits.Orders)]
     public async Task GetOrderAsync_FallsBackToStripeScan_OnCacheMiss()
     {
         const string sessionId = "cs_test_abc1234567";

@@ -113,10 +113,20 @@
                             <p class="text-xl font-display font-semibold text-stone-800 mt-1">@_order.AmountTotal.ToString("C")</p>
                         </div>
                         <div class="flex flex-col items-end gap-2">
-                            <button @onclick="ReorderAsync" disabled="@_reordering"
-                                    class="px-6 py-2.5 bg-primary hover:bg-primary-dark text-white text-xs font-semibold uppercase tracking-widest rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                                @(_reordering ? "Adding to Cart..." : "Reorder")
-                            </button>
+                            <div class="flex flex-wrap justify-end gap-3">
+                                @if (_order.ReceiptUrl is not null)
+                                {
+                                    <a href="@_order.ReceiptUrl" target="_blank" rel="noopener noreferrer"
+                                       class="px-6 py-2.5 border border-stone-300 hover:border-stone-500 text-stone-700 text-xs font-semibold uppercase tracking-widest rounded-full transition-colors inline-flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-base">print</span>
+                                        Print Receipt
+                                    </a>
+                                }
+                                <button @onclick="ReorderAsync" disabled="@_reordering"
+                                        class="px-6 py-2.5 bg-primary hover:bg-primary-dark text-white text-xs font-semibold uppercase tracking-widest rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                    @(_reordering ? "Adding to Cart..." : "Reorder")
+                                </button>
+                            </div>
                             @if (_reorderError)
                             {
                                 <p class="text-xs text-red-500">Something went wrong. Please try again.</p>

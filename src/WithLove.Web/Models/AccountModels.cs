@@ -44,7 +44,9 @@ public record OrderDetailView(
     /// <summary>Total amount charged in dollars.</summary>
     decimal AmountTotal,
     /// <summary>All line items for this order, including products and gift enhancements.</summary>
-    List<OrderLineItemView> LineItems);
+    List<OrderLineItemView> LineItems,
+    /// <summary>Stripe-hosted payment receipt URL, when available.</summary>
+    string? ReceiptUrl);
 
 /// <summary>
 /// A cursor-based page of order summaries returned by <c>GetOrdersAsync</c>.

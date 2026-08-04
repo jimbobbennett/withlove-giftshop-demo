@@ -133,11 +133,9 @@ builder.Services.AddMemoryCache();
 var redisConnectionString = builder.Configuration.GetConnectionString("redisCache")
     ?? throw new InvalidOperationException("The redisCache connection string is required.");
 var redisOptions = ConfigurationOptions.Parse(redisConnectionString);
-redisOptions.Password = builder.Configuration["REDISCACHE_PASSWORD"];
 
-builder.AddRedisDistributedCache(
-    connectionName: "redisCache",
-    configureOptions: options => options.Password = redisOptions.Password);
+builder.Services.AddStackExchangeRedisCache(options =>
+    options.ConfigurationOptions = redisOptions);
 
 builder.Services.AddFusionCache()
     .WithDefaultEntryOptions(new FusionCacheEntryOptions

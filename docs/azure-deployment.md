@@ -1,12 +1,15 @@
 # Azure Deployment Guide — WithLove Gift Shop
 
-This guide walks through deploying the WithLove Gift Shop to Azure Container Apps using the Aspire CLI. It assumes you know .NET but have not deployed an Aspire app before.
+This guide walks through deploying the WithLove Gift Shop to Azure Container Apps. It assumes you know .NET but have not deployed an Aspire app before.
+
+For the normal local workflow, use the repository's `just` recipes. They wrap the Aspire CLI with the cleanup and retry behavior needed by this application's Azure resources. Direct Aspire commands are documented below for CI, previews, and advanced troubleshooting.
 
 ## Prerequisites
 
 - .NET 10 SDK
 - Azure CLI (`az`) — authenticate with `az login`
-- Aspire CLI — ships with the .NET Aspire workload (`dotnet workload install aspire`)
+- Aspire CLI — install from [aspire.dev](https://aspire.dev/get-started/install-cli/)
+- `just` and `jq` for the repository deployment recipes
 - Temporal Cloud account with a namespace provisioned and an API key
 - Stripe account with API keys
 - OpenAI account with an API key (used for embeddings and chat)
@@ -39,25 +42,37 @@ The AppHost's Azure publish configuration swaps local development services for A
 
 workflowServer never scales to zero because it must continuously poll Temporal Cloud for tasks.
 
+The AppHost represents the existing namespace with `TemporalCommunity.Aspire.Hosting` and
+injects its connection settings into the Web and Workflow Server container apps. The Temporal
+Cloud resource is excluded from deployment manifests, so deployment does not create the
+namespace or register its search attributes.
+
 shopSite uses sticky sessions — required for Blazor InteractiveServer (SignalR).
 
 workflowServer uses TCP-only health probes because the HTTP `/health` endpoint is only exposed in development.
 
 ## Step 1 — Gather parameter values
 
-`aspire deploy` manages its own parameter state separately from `aspire secret set`. On the first run it prompts interactively for every parameter value and caches the answers at:
+Copy the environment template and fill in the Azure and application values:
+
+```bash
+cp .secrets.env.example .secrets.env
+```
+
+The `just` deployment recipes source `.secrets.env` and run Aspire non-interactively. All required values must be present in that file or exported by the calling shell. Aspire manages deployment parameter state separately from `aspire secret set` and caches resolved deployment values at:
 
 ```
 ~/.aspire/deployments/<apphost-sha256>/azureprod.json
 ```
 
-Subsequent runs read from that cache — you will not be prompted again unless you add new parameters or pass `--clear-cache`.
+Subsequent runs read from that cache. `just deploy` checks only this AppHost's environment file and removes it when the configured subscription, location, or resource group changes. It then performs a normal deployment so Aspire can save replacement state. `just deploy-clean` forces the same app-scoped reset. The recipes intentionally do not use `--clear-cache`, because that option ignores the cache and also prevents Aspire from saving replacement state.
 
 Collect the following values before running Step 3:
 
 | Parameter | Where to find it |
 |---|---|
 | `openai-api-key` | OpenAI dashboard → API keys |
+| `redis-password` | Generate once with `openssl rand -hex 24`; keep it stable across deploys |
 | `stripe-api-key` | Stripe Dashboard → Developers → API keys → Secret key |
 | `stripe-public-key` | Stripe Dashboard → Developers → API keys → Publishable key |
 | `temporal-address` | Temporal Cloud → Namespace → gRPC endpoint (e.g. `your-ns.tmprl.cloud:7233`) |
@@ -92,14 +107,17 @@ These attributes must exist before the workflowServer starts or workflow searche
 ```bash
 az login
 
-# Optional: preview the steps without deploying
-aspire deploy --list-steps --environment azureprod
+# Optional: preview the underlying Aspire steps without deploying
+aspire deploy \
+  --apphost src/WithLove.AppHost/WithLove.AppHost.csproj \
+  --environment azureprod \
+  --list-steps
 
-# Deploy
-aspire deploy --environment azureprod
+# Recommended developer workflow
+just deploy
 ```
 
-The first run is interactive. Aspire prompts for:
+Before deploying, the recipe verifies that the active Azure CLI subscription and tenant match `.secrets.env`. It fails before provisioning if they do not match. The required Azure targeting values are:
 
 - Azure subscription
 - Azure region (for example, `eastus`)
@@ -112,6 +130,20 @@ https://shopsite.victoriousbeach-abc123.eastus.azurecontainerapps.io
 ```
 
 Keep this URL — you need it in the next step.
+
+If you change the Azure location or resource group, use:
+
+```bash
+just deploy-clean
+```
+
+`just deploy` also purges matching soft-deleted Key Vaults from the configured disposable resource group, waits for resource-group transitions to finish, and retries only confirmed Azure pending-deletion conditions. Deterministic deployment failures are returned immediately. After a successful deployment, it restarts the Redis revision so a rotated `redis-password` is loaded by the running Redis process before clients reconnect.
+
+### Azure SQL identity provisioning
+
+Aspire 13.4.6 generates an Azure SQL role script that imports `SqlServer` 22.3.0 into the Azure PowerShell 14 deployment image. That combination can fail in `Invoke-Sqlcmd` with a `Microsoft.Extensions.Caching.Memory` `MissingMethodException`. The application also uses one shared managed identity for three Container Apps, while the default Aspire model generates three role modules with the same deployment-script resource name.
+
+The AppHost disables those default SQL role assignments and deploys one repository-owned `sql-identity-access` Bicep resource instead. It acquires an Azure SQL token, uses the in-box `System.Data.SqlClient`, reconciles the shared identity's database user by SID, and grants `db_owner` idempotently. Remove this workaround only after upgrading to an Aspire release that contains the upstream fix and verifying that a shared identity no longer produces duplicate role scripts.
 
 ## Step 4 — Create the Stripe Event Destination
 
@@ -129,14 +161,13 @@ The Stripe CLI container used in development is replaced by a Stripe Event Desti
 
 `aspire deploy` manages its own parameter cache (see Step 1) independently of `aspire secret set`. Running `aspire secret set` here would update the local dev user secrets — not the deploy cache — so the placeholder would remain and Stripe webhook verification would fail.
 
-Pass the real secret as an environment variable on the deploy command instead:
+Replace `Parameters__stripe_webhook_secret` in `.secrets.env`, then deploy:
 
 ```bash
-Parameters__stripe_webhook_secret="whsec_<your-real-secret>" \
-aspire deploy --environment azureprod
+just deploy
 ```
 
-This injects the value directly into the deploy pipeline for this run without altering the cache or requiring `--clear-cache`. The deploy writes the updated secret to Key Vault and Container Apps picks it up.
+The recipe sources `.secrets.env`, and the explicit value takes precedence over Aspire's cached parameter value. The deploy writes the updated secret to Key Vault and Container Apps picks it up.
 
 ## Verification checklist
 
@@ -157,44 +188,36 @@ az containerapp replica list \
 
 ## Non-interactive / CI deploy
 
-Pass all values as environment variables on the `aspire deploy` process. Parameter names with dashes become underscores in environment variable names:
+For CI using the repository recipe, have the CI secret store materialize `.secrets.env` using `.secrets.env.example` as the schema. Include every required value, including `Parameters__redis_password`, then run:
 
 ```bash
-Azure__SubscriptionId="<subscription-id>" \
-Azure__Location="eastus" \
-Azure__ResourceGroup="withlove-rg" \
-Parameters__openai_api_key="<key>" \
-Parameters__stripe_api_key="<key>" \
-Parameters__stripe_public_key="<key>" \
-Parameters__temporal_address="your-ns.tmprl.cloud:7233" \
-Parameters__temporal_namespace="your-ns.acct" \
-Parameters__temporal_api_key="<key>" \
-Parameters__stripe_webhook_secret="whsec_..." \
-aspire deploy --environment azureprod --non-interactive
+test -s .secrets.env
+just deploy
 ```
+
+If CI supplies environment variables directly instead of creating `.secrets.env`, use the direct `aspire deploy --non-interactive` command shown in the advanced section below.
 
 ## Secret rotation
 
-**Stripe webhook secret:** Rotate in Stripe Dashboard -> Webhooks -> select destination -> **Rotate secret**. Stripe accepts signatures from both the old and new secret for 24 hours. Pass the new value via environment variable on the deploy command (same as Step 5 — `aspire secret set` updates local dev secrets, not the deploy cache):
+**Stripe webhook secret:** Rotate in Stripe Dashboard -> Webhooks -> select destination -> **Rotate secret**. Stripe accepts signatures from both the old and new secret for 24 hours. Replace `Parameters__stripe_webhook_secret` in `.secrets.env`, then deploy (`aspire secret set` updates local development secrets, not Azure deployment inputs):
 
 ```bash
-Parameters__stripe_webhook_secret="whsec_<new-secret>" \
-aspire deploy --environment azureprod
+just deploy
 ```
 
-**All other secrets:** Pass the new value as an environment variable on the deploy command. Key Vault secrets are picked up by Container Apps within approximately 30 minutes automatically — a forced restart is not required for non-critical rotations.
+**All other secrets:** Replace the corresponding value in `.secrets.env`, then deploy. Key Vault secrets are picked up by Container Apps within approximately 30 minutes automatically — a forced restart is not required for non-critical rotations.
 
 ```bash
-Parameters__openai_api_key="<new-key>" aspire deploy --environment azureprod
+just deploy
 ```
 
 ## Teardown
 
 ```bash
-aspire destroy --environment azureprod
+just destroy
 ```
 
-This removes all Azure resources provisioned for this environment.
+This first uses Aspire's destroy pipeline when its app-scoped state matches `.secrets.env`. If a failed deployment never saved state, or stale state points elsewhere, it falls back to deleting only the explicitly configured resource group. It then waits for deletion, purges matching soft-deleted Key Vaults, and removes the exact local environment state file so the next `just deploy` starts cleanly.
 
 ## Generated files (do not commit)
 
@@ -221,10 +244,30 @@ azd up --environment azureprod
 
 | Command | Purpose |
 |---|---|
+| `just deploy` | Deploy or incrementally update Azure resources using the project safeguards |
+| `just deploy-clean` | Deploy with fresh Aspire state after infrastructure-level changes |
+| `just destroy` | Tear down Azure resources, wait for deletion, and clean up Key Vaults |
 | `aspire secret list` | Show all stored secrets (values masked) |
 | `aspire secret get <key>` | Read a single secret value |
 | `aspire secret delete <key>` | Remove a secret |
 | `aspire secret path` | Show path to the secrets JSON file |
-| `aspire deploy --list-steps --environment azureprod` | Preview deploy steps without executing |
+| `aspire deploy --apphost src/WithLove.AppHost/WithLove.AppHost.csproj --list-steps --environment azureprod` | Preview deploy steps without executing |
 | `az containerapp logs show --name shopsite --resource-group withlove-rg` | Stream shopSite logs |
 | `az containerapp replica list --name workflowserver --resource-group withlove-rg` | Check workflowServer replicas |
+
+## Direct Aspire CLI
+
+Use the direct commands when running CI without `just`, previewing pipeline steps, or troubleshooting Aspire itself. These commands do not include the repository's account guard, Key Vault cleanup, resource-group wait, app-scoped cache repair, or transient Azure retry behavior:
+
+```bash
+source .secrets.env
+aspire deploy \
+  --apphost src/WithLove.AppHost/WithLove.AppHost.csproj \
+  --environment azureprod \
+  --non-interactive
+aspire destroy \
+  --apphost src/WithLove.AppHost/WithLove.AppHost.csproj \
+  --environment azureprod \
+  --non-interactive \
+  --yes
+```
