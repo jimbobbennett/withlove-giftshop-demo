@@ -24,7 +24,7 @@ aspire secret set Parameters:openai-api-key "<your-openai-key>"
 aspire secret set Parameters:stripe-api-key "<your-stripe-secret-key>"
 aspire secret set Parameters:stripe-public-key "<your-stripe-public-key>"
 aspire secret set Parameters:stripe-webhook-secret "<whsec_...>"  # printed by stripe listen on first run
-aspire secret set Parameters:redis-password "<local-redis-password>"
+aspire secret set Parameters:redisCache-password "<local-redis-password>"
 ```
 
 Verify your secrets are stored:
@@ -41,25 +41,13 @@ aspire secret get Parameters:openai-api-key
 
 The AppHost injects these values into the appropriate projects.
 
-The AppHost uses `TemporalCommunity.Aspire.Hosting` to run a persistent Temporal development
-container locally and to represent the existing Temporal Cloud namespace during publishing.
-The Cloud resource supplies connection settings to the Web and Workflow Server projects; it
-does not provision the Temporal Cloud namespace or its search attributes.
-
-## Running the Application
+## Running Locally
 
 ### Prerequisites Check
 
 Before running, ensure:
 
 1. **Docker Desktop is running** — Required for Redis, SQL Server, and Temporal containers
-2. **Stripe CLI is running and forwarding webhooks** — For local Stripe webhook testing:
-
-```bash
-stripe listen --forward-to https://localhost:7260/stripe/webhook
-```
-
-This listens for Stripe webhook events and forwards them to your local web app. Keep this terminal running while developing.
 
 ### Build & Run
 
@@ -75,14 +63,15 @@ Run the Aspire AppHost
 aspire run
 ```
 
-The Aspire dashboard opens automatically and shows:
+Opening Aspire dashboard should show:
 
 - **Aspire Dashboard** — resource health, logs, traces, and metrics
 - **Shop Frontend** — the Blazor Web app storefront
 - **Products API** — REST endpoints with Scalar docs at `/scalar`
 - **Redis Insight** — cache inspection dashboard
 - **DbGate** — SQL Server browser
-- **Temporal UI** — workflow visibility
+- **Stripe CLI** — local webhook forwarding
+- **Temporal Server** — local dev server
 
 To stop, press `Ctrl+C` in the terminal.
 

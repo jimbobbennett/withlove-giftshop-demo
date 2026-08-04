@@ -55,9 +55,7 @@ public class IntegrationTestFixture : IAsyncLifetime
     {
         // Create the AppHost from the Aspire project (test mode skips Temporal/Web/WorkflowServer)
         var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.WithLove_AppHost>(
-                args: ["TESTING=true", "Parameters:redis-password=integration-test-password"],
-                cancellationToken: CancellationToken.None);
+            .CreateAsync<Projects.WithLove_AppHost>(args: ["TESTING=true"], cancellationToken: CancellationToken.None);
 
         // Configure logging
         appHost.Services.AddLogging(logging =>
