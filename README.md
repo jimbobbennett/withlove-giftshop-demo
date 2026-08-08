@@ -12,6 +12,7 @@ The sample also uses OpenAI models for inference and embedding generation.
 - [Stripe CLI](https://github.com/stripe/stripe-cli) — for local webhook forwarding (`brew install stripe/stripe-cli/stripe` on macOS)
 - **OpenAI API key** — used by the chat assistant and embedding generation
 - **Stripe API keys** (test mode) — used for checkout
+- **Optional: Arize AX API key and Space ID** — sends detailed chat-agent traces to Arize AX
 
 ## Configuration
 
@@ -40,6 +41,35 @@ aspire secret get Parameters:openai-api-key
 ```
 
 The AppHost injects these values into the appropriate projects.
+
+### Optional: detailed GenAI telemetry in Arize AX
+
+The chat assistant emits OpenTelemetry GenAI spans for every model call and tool execution. To
+send those traces to [Arize AX](https://arize.com/docs/ax), set these environment variables in the
+same shell used to run Aspire:
+
+```bash
+export ARIZE_API_KEY="<your-arize-api-key>"
+export ARIZE_SPACE_ID="<your-arize-space-id>"
+export ARIZE_PROJECT_NAME="withlove-giftshop-demo"
+```
+
+Arize configuration is optional. When all three variables are present, the workflow server exports
+traces to AX over OTLP/HTTP. When they are absent, the app keeps its normal Aspire telemetry setup.
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` to use another OTLP collector instead; it takes precedence over
+the Arize configuration.
+
+The trace for a chat turn is structured as one `invoke_agent LA` span, with model `chat` spans and
+`execute_tool` spans beneath it. This keeps the tool call, its result, and the follow-up model call
+correlated under the same trace.
+
+By default, request and response contents are not captured. This avoids exporting customer and
+prompt data. Enable full content capture only in an environment where that data is approved for
+telemetry:
+
+```bash
+export WITHLOVE_GENAI_CAPTURE_CONTENT=true
+```
 
 ## Running Locally
 

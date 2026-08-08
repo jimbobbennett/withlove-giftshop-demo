@@ -4,7 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
+using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
 namespace Microsoft.Extensions.Hosting;
@@ -79,9 +81,31 @@ public static class Extensions
                     .AddHttpClientInstrumentation();
             });
 
-        var useOtlpExporter = !string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
+        var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
+        var arizeApiKey = builder.Configuration["ARIZE_API_KEY"];
+        var arizeSpaceId = builder.Configuration["ARIZE_SPACE_ID"];
+        var arizeProjectName = builder.Configuration["ARIZE_PROJECT_NAME"];
+        var useArizeExporter = string.IsNullOrWhiteSpace(otlpEndpoint)
+            && !string.IsNullOrWhiteSpace(arizeApiKey)
+            && !string.IsNullOrWhiteSpace(arizeSpaceId)
+            && !string.IsNullOrWhiteSpace(arizeProjectName);
 
-        if (useOtlpExporter)
+        if (useArizeExporter)
+        {
+            openTelemetryBuilder.ConfigureResource(resource => resource.AddAttributes(
+            [
+                new KeyValuePair<string, object>("openinference.project.name", arizeProjectName!),
+            ]));
+
+            openTelemetryBuilder.WithTracing(tracing => tracing.AddOtlpExporter(options =>
+            {
+                options.Endpoint = new Uri("https://otlp.arize.com/v1/traces");
+                options.Protocol = OtlpExportProtocol.HttpProtobuf;
+                options.Headers = $"api_key={arizeApiKey},space_id={arizeSpaceId}";
+            }));
+        }
+
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
         {
             builder.Services.AddOpenTelemetry().UseOtlpExporter();
         }

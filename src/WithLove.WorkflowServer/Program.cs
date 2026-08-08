@@ -21,6 +21,8 @@ builder.ConfigureOpenTelemetry()
     {
         tracing.AddSource(Instrumentation.ActivitySourceName);
         tracing.AddSource(
+            "Experimental.Microsoft.Extensions.AI",
+            "Microsoft.Extensions.AI",
             TracingInterceptor.ClientSource.Name,
             TracingInterceptor.WorkflowsSource.Name,
             TracingInterceptor.ActivitiesSource.Name);
@@ -73,7 +75,11 @@ builder.Services.AddEmbeddingGenerator<string, Embedding<float>>(
 
 builder.Services.AddChatClient(
     new OpenAI.Chat.ChatClient("gpt-5-nano", openaiKey).AsIChatClient())
-    .UseFunctionInvocation();
+    .UseFunctionInvocation()
+    .UseOpenTelemetry(
+        sourceName: Instrumentation.ActivitySourceName,
+        configure: client => client.EnableSensitiveData =
+            builder.Configuration.GetValue<bool>("WITHLOVE_GENAI_CAPTURE_CONTENT"));
 
 builder.Services.AddHttpClient("productsApi", client =>
 {
@@ -141,4 +147,3 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 await app.RunAsync();
-

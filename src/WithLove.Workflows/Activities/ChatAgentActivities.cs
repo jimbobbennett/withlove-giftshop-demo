@@ -132,6 +132,16 @@ public partial class ChatAgentActivities(IChatClient chatClient, IHttpClientFact
         LogInferenceStarted(logger, messages.Count, tools.Count, _currentCart.Count);
 
         var sw = Stopwatch.StartNew();
+        using var agentActivity = ChatTelemetry.ActivitySource.StartActivity(
+            "invoke_agent LA",
+            ActivityKind.Internal);
+        if (agentActivity?.IsAllDataRequested == true)
+        {
+            agentActivity.SetTag("gen_ai.operation.name", "invoke_agent");
+            agentActivity.SetTag("gen_ai.agent.name", "LA");
+            agentActivity.SetTag("gen_ai.request.model", "gpt-5-nano");
+        }
+
         var response = await chatClient.GetResponseAsync(messages, chatOptions);
         sw.Stop();
 
