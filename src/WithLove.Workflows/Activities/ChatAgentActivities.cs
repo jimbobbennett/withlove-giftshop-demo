@@ -13,6 +13,12 @@ namespace WithLove.Workflows.Activities;
 
 public partial class ChatAgentActivities(IChatClient chatClient, IHttpClientFactory httpClientFactory)
 {
+    private static readonly bool CaptureSensitiveTelemetry =
+        string.Equals(
+            Environment.GetEnvironmentVariable("WITHLOVE_GENAI_CAPTURE_CONTENT"),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+
     private const string SystemPrompt = """
         You are LA — the Love Assistant at WithLove Gift Shop. You're warm, a little playful,
         and genuinely passionate about helping people find the perfect gift. Think of yourself as
@@ -209,64 +215,69 @@ public partial class ChatAgentActivities(IChatClient chatClient, IHttpClientFact
     private async Task<string> SearchProductsAsync(
         [Description("Search query for finding products")] string query)
     {
+        SetToolCallArguments(new { query });
         var http = httpClientFactory.CreateClient("productsApi");
         var response = await http.GetAsync($"/api/products/search?q={Uri.EscapeDataString(query)}&top=10");
 
         if (!response.IsSuccessStatusCode)
-            return "Sorry, I couldn't search for products right now.";
+            return SetToolCallResult("Sorry, I couldn't search for products right now.");
 
         var json = await response.Content.ReadAsStringAsync();
-        return SummarizeProductList(json);
+        return SetToolCallResult(SummarizeProductList(json));
     }
 
     private async Task<string> GetProductDetailsAsync(
         [Description("The product ID to look up")] int productId)
     {
+        SetToolCallArguments(new { productId });
         var http = httpClientFactory.CreateClient("productsApi");
         var response = await http.GetAsync($"/api/products/{productId}");
 
         if (!response.IsSuccessStatusCode)
-            return $"Sorry, I couldn't find product {productId}.";
+            return SetToolCallResult($"Sorry, I couldn't find product {productId}.");
 
         var json = await response.Content.ReadAsStringAsync();
-        return SummarizeProduct(json);
+        return SetToolCallResult(SummarizeProduct(json));
     }
 
     private async Task<string> GetCategoriesAsync()
     {
+        SetToolCallArguments(new { });
         var http = httpClientFactory.CreateClient("productsApi");
         var response = await http.GetAsync("/api/categories");
 
         if (!response.IsSuccessStatusCode)
-            return "Sorry, I couldn't load collections right now.";
+            return SetToolCallResult("Sorry, I couldn't load collections right now.");
 
         var json = await response.Content.ReadAsStringAsync();
-        return SummarizeCategoryList(json);
+        return SetToolCallResult(SummarizeCategoryList(json));
     }
 
     private async Task<string> BrowseCategoryAsync(
         [Description("The category ID to browse")] int categoryId)
     {
+        SetToolCallArguments(new { categoryId });
         var http = httpClientFactory.CreateClient("productsApi");
         var response = await http.GetAsync($"/api/products/category/{categoryId}");
 
         if (!response.IsSuccessStatusCode)
-            return $"Sorry, I couldn't load that collection right now.";
+            return SetToolCallResult($"Sorry, I couldn't load that collection right now.");
 
         var json = await response.Content.ReadAsStringAsync();
-        return SummarizeProductList(json);
+        return SetToolCallResult(SummarizeProductList(json));
     }
 
     private async Task<string> AddToCart(
         [Description("The exact product ID from search or browse results")] int productId,
         [Description("Quantity to add (default 1)")] int quantity = 1)
     {
+        SetToolCallArguments(new { productId, quantity });
         // Look up product details to populate the cart action with verified data
         var http = httpClientFactory.CreateClient("productsApi");
         var response = await http.GetAsync($"/api/products/{productId}");
 
         if (!response.IsSuccessStatusCode)
-            return $"Sorry, I couldn't find product {productId} to add to your cart. Please verify the product ID from search results.";
+            return SetToolCallResult($"Sorry, I couldn't find product {productId} to add to your cart. Please verify the product ID from search results.");
 
         var json = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(json);
@@ -284,12 +295,13 @@ public partial class ChatAgentActivities(IChatClient chatClient, IHttpClientFact
         // Update working cart so view_cart reflects this mutation
         _workingCart.Add(id, name, price, quantity);
 
-        return $"Added {quantity}x {name} (ID: {id}, ${price:F2}) to the cart.";
+        return SetToolCallResult($"Added {quantity}x {name} (ID: {id}, ${price:F2}) to the cart.");
     }
 
     private Task<string> RemoveFromCart(
         [Description("Comma-separated product IDs to remove from the cart (e.g. '3' or '3,7,12')")] string productIds)
     {
+        SetToolCallArguments(new { productIds });
         var ids = productIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var removed = new List<string>();
 
@@ -303,51 +315,62 @@ public partial class ChatAgentActivities(IChatClient chatClient, IHttpClientFact
             _workingCart.Remove(id);
         }
 
-        return removed.Count == 0
-            ? Task.FromResult("No valid product IDs provided. Check the cart with view_cart first.")
-            : Task.FromResult($"Removed from cart: {string.Join(", ", removed)}");
+        return Task.FromResult(SetToolCallResult(removed.Count == 0
+            ? "No valid product IDs provided. Check the cart with view_cart first."
+            : $"Removed from cart: {string.Join(", ", removed)}"));
     }
 
-    private Task<string> ViewCart() => Task.FromResult(_workingCart.Summarize());
+    private Task<string> ViewCart()
+    {
+        SetToolCallArguments(new { });
+        return Task.FromResult(SetToolCallResult(_workingCart.Summarize()));
+    }
 
     private Task<string> ClearCart()
     {
+        SetToolCallArguments(new { });
         _pendingCartActions.Add(new CartAction(CartActionType.Clear));
         _workingCart.Clear();
-        return Task.FromResult("Cart has been emptied.");
+        return Task.FromResult(SetToolCallResult("Cart has been emptied."));
     }
 
     private Task<string> NavigateToProduct(
         [Description("The product ID to navigate to")] int productId)
     {
+        SetToolCallArguments(new { productId });
         _pendingNavigationActions.Add(new NavigationAction(NavigationTarget.Product, $"/product/{productId}"));
-        return Task.FromResult($"Navigating to product {productId} page.");
+        return Task.FromResult(SetToolCallResult($"Navigating to product {productId} page."));
     }
 
     private Task<string> NavigateToCollection(
         [Description("Numeric category ID from get_categories results. Use 0 only to show all collections.")] int categoryId = 0)
     {
+        SetToolCallArguments(new { categoryId });
         var url = categoryId > 0 ? $"/collections/{categoryId}" : "/collections";
         _pendingNavigationActions.Add(new NavigationAction(NavigationTarget.Collection, url));
-        return Task.FromResult(categoryId > 0 ? $"Navigating to collection {categoryId}." : "Navigating to all collections.");
+        return Task.FromResult(SetToolCallResult(
+            categoryId > 0 ? $"Navigating to collection {categoryId}." : "Navigating to all collections."));
     }
 
     private Task<string> NavigateToCart()
     {
+        SetToolCallArguments(new { });
         _pendingNavigationActions.Add(new NavigationAction(NavigationTarget.Cart, "/cart"));
-        return Task.FromResult("Navigating to your cart.");
+        return Task.FromResult(SetToolCallResult("Navigating to your cart."));
     }
 
     private Task<string> NavigateToCheckout()
     {
+        SetToolCallArguments(new { });
         _pendingNavigationActions.Add(new NavigationAction(NavigationTarget.Checkout, "/checkout"));
-        return Task.FromResult("Navigating to checkout.");
+        return Task.FromResult(SetToolCallResult("Navigating to checkout."));
     }
 
     private async Task<string> ViewLoyaltyPointsAsync()
     {
+        SetToolCallArguments(new { });
         if (string.IsNullOrEmpty(_currentUserId))
-            return "Love Tokens are available to logged-in customers. Sign in to see your balance and start earning!";
+            return SetToolCallResult("Love Tokens are available to logged-in customers. Sign in to see your balance and start earning!");
 
         var logger = ActivityExecutionContext.Current.Logger;
 
@@ -361,19 +384,34 @@ public partial class ChatAgentActivities(IChatClient chatClient, IHttpClientFact
                 ? "You've reached the highest tier — Gold!"
                 : $"Earn {profile.PointsToNextTier} more to reach {NextTierName(profile.Tier)}.";
 
-            return $"You have {profile.Balance} Love Tokens ({profile.Tier} tier). {nextTierMsg} " +
-                   $"(Lifetime earned: {profile.LifetimeEarned} pts. Redeem at checkout: 100 pts = $1 off.)";
+            return SetToolCallResult(
+                $"You have {profile.Balance} Love Tokens ({profile.Tier} tier). {nextTierMsg} " +
+                $"(Lifetime earned: {profile.LifetimeEarned} pts. Redeem at checkout: 100 pts = $1 off.)");
         }
         catch (Temporalio.Exceptions.RpcException ex)
             when (ex.Code == Temporalio.Exceptions.RpcException.StatusCode.NotFound)
         {
-            return "You don't have any Love Tokens yet. Complete a purchase to start earning — 1 token per $1 spent!";
+            return SetToolCallResult("You don't have any Love Tokens yet. Complete a purchase to start earning — 1 token per $1 spent!");
         }
         catch (Exception ex)
         {
             logger.UnableToLoadLoveTokens(ex, _currentUserId);
-            return "I couldn't load your Love Tokens balance right now. Please try again in a moment.";
+            return SetToolCallResult("I couldn't load your Love Tokens balance right now. Please try again in a moment.");
         }
+    }
+
+    private static void SetToolCallArguments(object arguments)
+    {
+        if (CaptureSensitiveTelemetry && Activity.Current?.GetTagItem("gen_ai.operation.name") is "execute_tool")
+            Activity.Current.SetTag("gen_ai.tool.call.arguments", JsonSerializer.Serialize(arguments));
+    }
+
+    private static string SetToolCallResult(string result)
+    {
+        if (CaptureSensitiveTelemetry && Activity.Current?.GetTagItem("gen_ai.operation.name") is "execute_tool")
+            Activity.Current.SetTag("gen_ai.tool.call.result", JsonSerializer.Serialize(result));
+
+        return result;
     }
 
     private static string NextTierName(LoyaltyTier tier) => tier switch
