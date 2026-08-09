@@ -32,6 +32,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\src\WithLove.Workflows\WithLove.Workflows.csproj" />
+		<ProjectReference Include="..\..\src\WithLove.ServiceDefaults\WithLove.ServiceDefaults.csproj" />
 	</ItemGroup>
 
 </Project>
