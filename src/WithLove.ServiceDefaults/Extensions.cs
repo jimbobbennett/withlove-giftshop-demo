@@ -95,6 +95,7 @@ public static class Extensions
         {
             openTelemetryBuilder.ConfigureResource(resource => resource.AddAttributes(
             [
+                new KeyValuePair<string, object>("arize.project.name", arizeProjectName!),
                 new KeyValuePair<string, object>("openinference.project.name", arizeProjectName!),
             ]));
 
@@ -106,7 +107,9 @@ public static class Extensions
             };
 
             openTelemetryBuilder.WithTracing(tracing => tracing.AddProcessor(
-                new GenAiActivityExportProcessor(new OtlpTraceExporter(exporterOptions))));
+                new GenAiActivityExportProcessor(
+                    new OtlpTraceExporter(exporterOptions),
+                    arizeProjectName!)));
         }
 
         if (!string.IsNullOrWhiteSpace(otlpEndpoint))
@@ -150,7 +153,9 @@ public static class Extensions
     /// Sends only GenAI semantic-convention spans to Arize AX. Other telemetry remains
     /// available to Aspire and any separately configured OTLP collector.
     /// </summary>
-    private sealed class GenAiActivityExportProcessor(BaseExporter<Activity> exporter)
+    private sealed class GenAiActivityExportProcessor(
+        BaseExporter<Activity> exporter,
+        string arizeProjectName)
         : BaseProcessor<Activity>
     {
         private readonly BatchActivityExportProcessor _processor = new(
@@ -163,7 +168,10 @@ public static class Extensions
         public override void OnEnd(Activity data)
         {
             if (data.GetTagItem("gen_ai.operation.name") is not null)
+            {
+                data.SetTag("arize.project.name", arizeProjectName);
                 _processor.OnEnd(data);
+            }
         }
 
         protected override bool OnForceFlush(int timeoutMilliseconds) =>
