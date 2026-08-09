@@ -71,6 +71,9 @@ telemetry:
 export WITHLOVE_GENAI_CAPTURE_CONTENT=true
 ```
 
+With content capture enabled, the agent span records the exact workflow activity input and output,
+while the child model and tool spans record their own request, response, arguments, and results.
+
 ## Running Locally
 
 ### Prerequisites Check

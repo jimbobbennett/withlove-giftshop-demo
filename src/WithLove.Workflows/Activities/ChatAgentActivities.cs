@@ -146,6 +146,9 @@ public partial class ChatAgentActivities(IChatClient chatClient, IHttpClientFact
             agentActivity.SetTag("gen_ai.operation.name", "invoke_agent");
             agentActivity.SetTag("gen_ai.agent.name", "LA");
             agentActivity.SetTag("gen_ai.request.model", "gpt-5-nano");
+
+            if (CaptureSensitiveTelemetry)
+                agentActivity.SetTag("input.value", JsonSerializer.Serialize(input));
         }
 
         var response = await chatClient.GetResponseAsync(messages, chatOptions);
@@ -167,7 +170,12 @@ public partial class ChatAgentActivities(IChatClient chatClient, IHttpClientFact
         foreach (var action in _pendingCartActions)
             ChatTelemetry.CartMutations.Add(1, new TagList { { "type", action.Type.ToString().ToLower() } });
 
-        return new ChatInferenceResult(assistantText, [.. _pendingCartActions], [.. _pendingNavigationActions]);
+        var result = new ChatInferenceResult(assistantText, [.. _pendingCartActions], [.. _pendingNavigationActions]);
+
+        if (CaptureSensitiveTelemetry && agentActivity?.IsAllDataRequested == true)
+            agentActivity.SetTag("output.value", JsonSerializer.Serialize(result));
+
+        return result;
     }
 
     [LoggerMessage(Level = LogLevel.Information,
