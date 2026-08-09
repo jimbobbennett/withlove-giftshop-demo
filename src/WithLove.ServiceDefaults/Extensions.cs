@@ -169,6 +169,13 @@ public static class Extensions
         {
             if (data.GetTagItem("gen_ai.operation.name") is not null)
             {
+                if (data.Status == ActivityStatusCode.Unset)
+                {
+                    var hasRecordedError = data.GetTagItem("error.type") is not null
+                        || data.Events.Any(@event => @event.Name == "exception");
+                    data.SetStatus(hasRecordedError ? ActivityStatusCode.Error : ActivityStatusCode.Ok);
+                }
+
                 data.SetTag("arize.project.name", arizeProjectName);
                 _processor.OnEnd(data);
             }

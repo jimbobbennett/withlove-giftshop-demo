@@ -151,7 +151,17 @@ public partial class ChatAgentActivities(IChatClient chatClient, IHttpClientFact
                 agentActivity.SetTag("input.value", JsonSerializer.Serialize(input));
         }
 
-        var response = await chatClient.GetResponseAsync(messages, chatOptions);
+        Microsoft.Extensions.AI.ChatResponse response;
+        try
+        {
+            response = await chatClient.GetResponseAsync(messages, chatOptions);
+        }
+        catch
+        {
+            agentActivity?.SetStatus(ActivityStatusCode.Error);
+            throw;
+        }
+
         sw.Stop();
 
         var assistantText = response.Text ?? "Hmm, something went sideways on my end. Mind trying that again?";
