@@ -142,14 +142,7 @@ public partial class ChatAgentActivities(IChatClient chatClient, IHttpClientFact
             "invoke_agent LA",
             ActivityKind.Internal);
         if (agentActivity?.IsAllDataRequested == true)
-        {
-            agentActivity.SetTag("gen_ai.operation.name", "invoke_agent");
-            agentActivity.SetTag("gen_ai.agent.name", "LA");
-            agentActivity.SetTag("gen_ai.request.model", "gpt-5-nano");
-
-            if (CaptureSensitiveTelemetry)
-                agentActivity.SetTag("input.value", JsonSerializer.Serialize(input));
-        }
+            ChatTelemetry.ConfigureAgentSpan(agentActivity, input, CaptureSensitiveTelemetry);
 
         Microsoft.Extensions.AI.ChatResponse response;
         try
@@ -182,8 +175,8 @@ public partial class ChatAgentActivities(IChatClient chatClient, IHttpClientFact
 
         var result = new ChatInferenceResult(assistantText, [.. _pendingCartActions], [.. _pendingNavigationActions]);
 
-        if (CaptureSensitiveTelemetry && agentActivity?.IsAllDataRequested == true)
-            agentActivity.SetTag("output.value", JsonSerializer.Serialize(result));
+        if (agentActivity?.IsAllDataRequested == true)
+            ChatTelemetry.CaptureAgentOutput(agentActivity, result, CaptureSensitiveTelemetry);
 
         return result;
     }
@@ -420,16 +413,12 @@ public partial class ChatAgentActivities(IChatClient chatClient, IHttpClientFact
 
     private static void SetToolCallArguments(object arguments)
     {
-        if (CaptureSensitiveTelemetry && Activity.Current?.GetTagItem("gen_ai.operation.name") is "execute_tool")
-            Activity.Current.SetTag("gen_ai.tool.call.arguments", JsonSerializer.Serialize(arguments));
+        ChatTelemetry.CaptureToolArguments(Activity.Current, arguments, CaptureSensitiveTelemetry);
     }
 
     private static string SetToolCallResult(string result)
     {
-        if (CaptureSensitiveTelemetry && Activity.Current?.GetTagItem("gen_ai.operation.name") is "execute_tool")
-            Activity.Current.SetTag("gen_ai.tool.call.result", JsonSerializer.Serialize(result));
-
-        return result;
+        return ChatTelemetry.CaptureToolResult(Activity.Current, result, CaptureSensitiveTelemetry);
     }
 
     private static string NextTierName(LoyaltyTier tier) => tier switch
