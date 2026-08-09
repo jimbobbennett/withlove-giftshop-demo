@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
@@ -97,12 +98,15 @@ public static class Extensions
                 new KeyValuePair<string, object>("openinference.project.name", arizeProjectName!),
             ]));
 
-            openTelemetryBuilder.WithTracing(tracing => tracing.AddOtlpExporter(options =>
+            var exporterOptions = new OtlpExporterOptions
             {
-                options.Endpoint = new Uri("https://otlp.arize.com/v1/traces");
-                options.Protocol = OtlpExportProtocol.HttpProtobuf;
-                options.Headers = $"api_key={arizeApiKey},space_id={arizeSpaceId}";
-            }));
+                Endpoint = new Uri("https://otlp.arize.com/v1/traces"),
+                Protocol = OtlpExportProtocol.HttpProtobuf,
+                Headers = $"api_key={arizeApiKey},space_id={arizeSpaceId}",
+            };
+
+            openTelemetryBuilder.WithTracing(tracing => tracing.AddProcessor(
+                new GenAiActivityExportProcessor(new OtlpTraceExporter(exporterOptions))));
         }
 
         if (!string.IsNullOrWhiteSpace(otlpEndpoint))
@@ -140,5 +144,40 @@ public static class Extensions
         }
 
         return app;
+    }
+
+    /// <summary>
+    /// Sends only GenAI semantic-convention spans to Arize AX. Other telemetry remains
+    /// available to Aspire and any separately configured OTLP collector.
+    /// </summary>
+    private sealed class GenAiActivityExportProcessor(BaseExporter<Activity> exporter)
+        : BaseProcessor<Activity>
+    {
+        private readonly BatchActivityExportProcessor _processor = new(
+            exporter,
+            maxQueueSize: 2048,
+            scheduledDelayMilliseconds: 5000,
+            exporterTimeoutMilliseconds: 30000,
+            maxExportBatchSize: 512);
+
+        public override void OnEnd(Activity data)
+        {
+            if (data.GetTagItem("gen_ai.operation.name") is not null)
+                _processor.OnEnd(data);
+        }
+
+        protected override bool OnForceFlush(int timeoutMilliseconds) =>
+            _processor.ForceFlush(timeoutMilliseconds);
+
+        protected override bool OnShutdown(int timeoutMilliseconds) =>
+            _processor.Shutdown(timeoutMilliseconds);
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                _processor.Dispose();
+
+            base.Dispose(disposing);
+        }
     }
 }
